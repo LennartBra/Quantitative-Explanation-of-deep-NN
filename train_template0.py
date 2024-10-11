@@ -11,8 +11,8 @@ import numpy as np
 import os
 #os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
 
-from DataGenerator_template import DataGenerator
-from make_model_template import make_model
+from DataGenerator_template import DataGenerator, DataGenerator_Pressure
+from make_model_template import make_model, make_model_pressure
 
 import tensorflow as tf
 from sklearn.metrics import mean_absolute_error
@@ -35,7 +35,7 @@ target_path = "C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/
 #Make Matlab like plots
 #%matplotlib qt
 
-#%% Main code
+#%% Main code for training and testing neural network with PPG
 #---------------------------------------------------------------------------------------------------------------------
 # Initialize paths
 #---------------------------------------------------------------------------------------------------------------------
@@ -168,6 +168,136 @@ TemplatePPG1 = batch_data[4]
 TemplatePPG2 = batch_data[5]
 
 
+#%% Main code for training and testing neural network with ABP signal
+#---------------------------------------------------------------------------------------------------------------------
+# Initialize paths
+#---------------------------------------------------------------------------------------------------------------------
+
+# Main path of final preprocessed data
+#path_main = "PulseDB/pulsedb0/"
+path_main = "C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/"
+# IDs
+files = os.listdir(path_main+"dev0_abp/")
+### Necessary for using subset ###
+#files = files[:10]
+##################################
+
+#---------------------------------------------------------------------------------------------------------------------
+# Initiliaze trainingsparameter
+#---------------------------------------------------------------------------------------------------------------------
+# loo = LeaveOneOut()
+# loo.get_n_splits(files)
+
+n_splits = 3
+kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+kfold.get_n_splits(files)
+
+batch_size = 2048
+
+if __name__=="__main__":
+    print("Train TemplateNet with PulseDB")
+    all_mae_sbp, all_mae_dbp, subject_result, all_pred, all_r_sbp, all_r_dbp = [], [], [], [], [], []
+    for nr_fold, (train_index, test_index) in enumerate(kfold.split(files)):
+        if nr_fold in [1,2]:continue
+
+        # Separate training, validation and test ids
+        train_index, val_index = train_test_split(train_index, test_size=0.05)
+        train_id = [files[x] for x in train_index]
+        val_id = [files[x] for x in val_index]
+        test_id = [files[x] for x in test_index]
+        
+        #train_id = train_id[0:5]
+        #val_id = val_id[0:1]
+        
+        # Generators
+        print("Loading Datagenerator")
+        generator_train = DataGenerator_Pressure(path_main, train_id, batch_size=batch_size, shuffle=False)
+        generator_val = DataGenerator_Pressure(path_main, val_id, batch_size=batch_size, shuffle=False)
+        generator_test = DataGenerator_Pressure(path_main, test_id, batch_size=batch_size, shuffle=False)
+
+        
+        #Load model with weights
+        #model = keras.models.load_model('C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/best_model_template0.h5', compile=False)
+        model_abp = make_model_pressure()
+        
+        # Training Code
+        # Make training
+        optimizer = optimizers.Adam(learning_rate=0.0001)
+
+        es = EarlyStopping(monitor="mae", patience=10)
+        mcp = ModelCheckpoint('best_model_template_pressure'+str(nr_fold)+'.h5', monitor='val_mae', save_best_only=True)
+        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8)
+        model_abp.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+
+        model_abp.fit(generator_test, #generator_train
+                        validation_data=generator_val,
+                        epochs=3,
+                        verbose=1,
+                        callbacks=[es, mcp, reduce_lr])
+        
+        # Make prediction
+        nr_data = generator_test.__len__()  #nr_data equals number of batches
+        all_mae = np.zeros((nr_data,2))
+
+
+        print('Prediction')
+        #for batch_index in range(0,nr_data):
+        for batch_index in range(0,10): #Verwendung von Batch 9 aus Testdaten für die Projetkarbeit
+            print(batch_index) 
+            batch_data, temp_true = generator_train.__getitem__(batch_index) #generator_test
+            
+
+            temp_pred = model.predict(batch_data, verbose=0, batch_size=batch_size)
+            if batch_index==0:
+                data_pred = temp_pred
+                data_true = temp_true
+                #continue        #reinschreiben für korrelationskoeffizient --> bessere Berechnung
+
+            if batch_index==nr_data-1:
+                for i in range(len(temp_pred)):
+                    if temp_pred[i,0]==0:
+                        temp_pred = temp_pred[i-1] 
+                        temp_true = temp_true[i-1]
+                        
+            data_pred = np.concatenate((data_pred, temp_pred), axis=0)
+            data_true = np.concatenate((data_true, temp_true), axis=0)
+        
+            mae_sbp_batch = mean_absolute_error(temp_pred[...,0], temp_true[:,0])
+            mae_dbp_batch = mean_absolute_error(temp_pred[...,1], temp_true[:,1])
+
+            all_mae[batch_index] = np.array([mae_sbp_batch, mae_dbp_batch])
+        r_sbp, _ = pearsonr(data_pred[:,0], data_true[:,0]) 
+        r_dbp, _ = pearsonr(data_pred[:,1], data_true[:,1]) 
+        
+        mae_sbp = np.mean(all_mae[:,0])
+        mae_dbp = np.mean(all_mae[:,1])
+        all_pred.append(np.array(data_pred))
+        
+        print(mae_sbp)
+        print(mae_dbp)
+        print(r_sbp, r_dbp)
+
+        all_mae_sbp.append(mae_sbp)
+        all_mae_dbp.append(mae_dbp)
+        all_r_sbp.append(r_sbp)
+        all_r_dbp.append(r_dbp)
+        
+    mae_sbp_mean = np.mean(all_mae_sbp)
+    mae_dbp_mean = np.mean(all_mae_dbp)
+    r_mean_sbp = np.mean(all_r_sbp)
+    r_mean_dbp = np.mean(all_r_dbp)
+    
+    print("Mean of SBP: ", mae_sbp_mean)
+    print("Mean of DBP: ", mae_dbp_mean)
+    print("Mean of r: ", r_mean_sbp, r_mean_dbp)
+    
+
+
+ABP = batch_data[0]
+ABP1 = batch_data[1]
+ABP2 = batch_data[2]
+
+
 #%% Integrated Gradients Algorithm Implementation
 def make_input_tensors(batch, batch_size):
     ''' 
@@ -269,7 +399,10 @@ def get_integrated_gradients(segment, baseline=None, num_steps=50):
     Returns the integrated gradients for the specified arguments
 
     '''
-    n_input_signals = 6
+    shape = np.shape(segment)
+    n_input_signals = shape[0]
+    print(f'inputsignals={n_input_signals}')
+    #n_input_signals = 6
     
     if baseline == None:
         baseline = np.zeros((1,1000))
@@ -380,26 +513,26 @@ IG_zero_DBP_25steps = np.load(target_path+'IG/IG_zero_DBP_new.npy')
 
 
 #%% Visualizing Results
-def subplot_all_input_signals(batch_data, segment_nr):
+def subplot_all_input_signals(batch_data, segment_nr, n_input_signals):
     '''
     Subplots all input signals of a segment from a given batch over the samples
     
     Args:
         - batch_data = One batch of 2048 segments
         - segment_nr = One segment
+        - n_input_signals = Number of input signals
        
     '''
-    def get_instance(batch_data, instance_nr):
-        signal_nr = 6
+    def get_instance(batch_data, instance_nr, n_input_signals):
         instance = []
     
-        for i in range(0,signal_nr):
+        for i in range(0,n_input_signals):
             signal =  batch_data[i][instance_nr][:]
             instance.append(signal)
         
         return instance
     
-    instance = get_instance(batch_data,segment_nr)
+    instance = get_instance(batch_data,segment_nr, n_input_signals)
     
     fig, axs = plt.subplots(6, sharex=True)
     fig.suptitle('All Input Signals')
@@ -767,7 +900,7 @@ subplot_all_input_signals(batch_data, 22)
 #Beispielsegment 1 SBP PPG2 --> Instanz 80
 #Beispielsegment 2 SBP PPG2 --> Instanz 81
 #Define segment_nr and signal_nr and create plots
-segment_nr = 80
+segment_nr = 81
 signal_nr = 0
 
 #Plot all IG attributions for one segment
@@ -902,6 +1035,75 @@ plot_3PPG_heatmap_scatter_subplot(TemplatePPG1[Instanz1], TemplatePPG1[Instanz2]
 
 #Zweite Ableitung Template
 plot_3PPG_heatmap_scatter_subplot(TemplatePPG2[Instanz1], TemplatePPG2[Instanz2], TemplatePPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],6)
+
+
+#%% AOPC Metric
+def rank_attributions(IG, pattern, window_length):
+    IG_matrix = np.squeeze(IG)
+    shape = np.shape(IG_matrix)
+    n_input_signals = shape[0]
+    distances = np.arange(0,shape[1],window_length)
+    summed_attributions_mat = np.zeros((n_input_signals,len(distances)))
+    for i in range(0,n_input_signals):
+        for j in range(0,len(distances)):
+            #print(f'input_signals: {i}, distances: {distances[j]+window_length}')
+            Sum = np.sum(np.abs(IG_matrix[i,distances[j]:distances[j]+window_length]))
+            summed_attributions_mat[i,j] = Sum
+    
+    mat_shape = np.shape(summed_attributions_mat)
+    
+    if pattern == 'morf': #most relevant first
+        sum_atts_vector = np.reshape(summed_attributions_mat,(1,mat_shape[0]*mat_shape[1]))
+        vec_shape = np.shape(sum_atts_vector)
+
+        #Sort summed attributions in descending order --> morf
+        atts_sorted_indices = np.flip(np.argsort(sum_atts_vector))
+
+        atts_sorted_vector = np.zeros(vec_shape)
+        for i in range(0,vec_shape[1]):
+            atts_sorted_vector[0,atts_sorted_indices[0,i]] = i  
+
+        ranks = np.reshape(atts_sorted_vector, mat_shape)
+    
+    if pattern == 'lerf': #least relevant first
+        sum_atts_vector = np.reshape(summed_attributions_mat,(1,mat_shape[0]*mat_shape[1]))
+        vec_shape = np.shape(sum_atts_vector)
+
+        #Sort summed attributions in ascending order --> lerf
+        atts_sorted_indices = np.argsort(sum_atts_vector)
+
+        atts_sorted_vector = np.zeros(vec_shape)
+        for i in range(0,vec_shape[1]):
+            atts_sorted_vector[0,atts_sorted_indices[0,i]] = i  
+
+        ranks = np.reshape(atts_sorted_vector, mat_shape)
+    
+    return summed_attributions_mat, ranks
+
+IG_sum_atts, IG_ranks = rank_attributions(IG_SBP, pattern='morf', window_length=10)
+
+'''
+matrix_shape = np.shape(Z_ranked)
+
+Z_shaped = np.reshape(Z_ranked,(1,matrix_shape[0]*matrix_shape[1]))
+array_shape = np.shape(Z_shaped)
+
+Z_shaped_sorted_indices = np.flip(np.argsort(Z_shaped))
+
+Z_shaped_sorted = np.zeros(array_shape)
+for i in range(0,array_shape[1]):
+    Z_shaped_sorted[0,Z_shaped_sorted_indices[0,i]] = i  
+
+Z_reshaped = np.reshape(Z_shaped_sorted,matrix_shape)
+'''          
+    
+def replace_k_features(ranks, k, window_length, replacement_strategy):
+    if replacement_strategy == 'local_mean':
+        pass
+    elif replacement_strategy == 'global_mean':
+        pass
+    elif replacement_strategy == 'zeros':
+        pass
 
 ##########################################################Breite##########
 ###############################################################################

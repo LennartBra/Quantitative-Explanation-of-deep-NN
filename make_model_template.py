@@ -118,4 +118,30 @@ def make_model():
                                 name='Template_Model')
 
     return model
+
+def make_model_pressure():
+    #Define Inputs
+    inp_time0 = Input(shape=(1000, 1), name="input_time0")
+    inp_time1 = Input(shape=(1000, 1), name="input_time1")
+    inp_time2 = Input(shape=(1000, 1), name="input_time2")
+    
+    #Inputs going through feature blocks
+    signal0 = signal_block(inp_time0, [32, 64]) #Feature Block ABP0
+    signal1 = signal_block(inp_time1, [32, 64]) #Feature Block ABP1
+    signal2 = signal_block(inp_time2, [32, 64]) #Feature Block ABP2
+    
+    #Concatenate all 3 Concatenate blocks
+    merged = concatenate([signal0, signal1, signal2])
+    
+    #Subnet Block
+    final_outp = subnet_x(merged)
+    
+    #Define complete model
+    model = keras.Model(inputs=[inp_time0,
+                                inp_time1,
+                                inp_time2],
+                                outputs=final_outp,
+                                name='Template_Model_Pressure')
+    
+    return model
     
