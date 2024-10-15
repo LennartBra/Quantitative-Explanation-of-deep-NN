@@ -23,6 +23,7 @@ from keras.models import clone_model
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow import keras
 import matplotlib.pyplot as plt
+import metrics as metrics
 
 keras.backend.clear_session()
 
@@ -1042,6 +1043,7 @@ def rank_attributions(IG, pattern, window_length):
     IG_matrix = np.squeeze(IG)
     shape = np.shape(IG_matrix)
     n_input_signals = shape[0]
+    #Calculate sums ove the window_length
     distances = np.arange(0,shape[1],window_length)
     summed_attributions_mat = np.zeros((n_input_signals,len(distances)))
     for i in range(0,n_input_signals):
@@ -1060,12 +1062,14 @@ def rank_attributions(IG, pattern, window_length):
         atts_sorted_indices = np.flip(np.argsort(sum_atts_vector))
 
         atts_sorted_vector = np.zeros(vec_shape)
+        #rank the sorted attribution indices
         for i in range(0,vec_shape[1]):
             atts_sorted_vector[0,atts_sorted_indices[0,i]] = i  
-
+        #Reshape from vector form to matrix form
         ranks = np.reshape(atts_sorted_vector, mat_shape)
     
     if pattern == 'lerf': #least relevant first
+        #Reshape summed attributions from matrix form to vector form --> e.g. (6,100) to (1,600)
         sum_atts_vector = np.reshape(summed_attributions_mat,(1,mat_shape[0]*mat_shape[1]))
         vec_shape = np.shape(sum_atts_vector)
 
@@ -1073,37 +1077,105 @@ def rank_attributions(IG, pattern, window_length):
         atts_sorted_indices = np.argsort(sum_atts_vector)
 
         atts_sorted_vector = np.zeros(vec_shape)
+        #rank the sorted attribution indices
         for i in range(0,vec_shape[1]):
             atts_sorted_vector[0,atts_sorted_indices[0,i]] = i  
-
+        #Reshape from vector form to matrix form
         ranks = np.reshape(atts_sorted_vector, mat_shape)
     
     return summed_attributions_mat, ranks
 
-IG_sum_atts, IG_ranks = rank_attributions(IG_SBP, pattern='morf', window_length=10)
+IG_sum_atts, IG_ranks = rank_attributions(IG_zero_SBP[0] , pattern='morf', window_length=10)
 
-'''
-matrix_shape = np.shape(Z_ranked)
-
-Z_shaped = np.reshape(Z_ranked,(1,matrix_shape[0]*matrix_shape[1]))
-array_shape = np.shape(Z_shaped)
-
-Z_shaped_sorted_indices = np.flip(np.argsort(Z_shaped))
-
-Z_shaped_sorted = np.zeros(array_shape)
-for i in range(0,array_shape[1]):
-    Z_shaped_sorted[0,Z_shaped_sorted_indices[0,i]] = i  
-
-Z_reshaped = np.reshape(Z_shaped_sorted,matrix_shape)
-'''          
-    
-def replace_k_features(ranks, k, window_length, replacement_strategy):
+def replace_k_features(x, ranks, k, window_length, replacement_strategy):
+    x_replaced = []
+    x_temp = np.squeeze(np.array(x))
+    #replace features with defined replacement_strategy
     if replacement_strategy == 'local_mean':
-        pass
+        #replace k features
+        for i in range(0,k):
+            #Get index of k-th feature
+            rank_index = np.where(ranks==i)
+            x_index = window_length * rank_index[1][0]
+            #print(f'k: {k}, x_index:{x_index}, rank_index:{rank_index[0][0]}')
+            #Calculate local mean
+            local_mean = np.mean(x_temp[rank_index[0][0],x_index:x_index+window_length])
+            #print(f'values:{x_temp[rank_index[0][0],x_index:x_index+window_length]}, local_mean: {local_mean}')
+            #Replace k-th feature with local mean
+            x_temp[rank_index[0][0],x_index:x_index+window_length] = local_mean
+            #Append x_temp to x_replaced
+            x_replaced.append(x_temp.copy())
+            
     elif replacement_strategy == 'global_mean':
-        pass
+        x_copy = np.squeeze(x.copy())
+        #replace k features
+        for i in range(0,k):
+            #Get index of k-th feature
+            rank_index = np.where(ranks==i)
+            x_index = window_length * rank_index[1][0]
+            #print(f'k: {k}, x_index:{x_index}, rank_index:{rank_index[0][0]}')
+            #Calculate local mean
+            global_mean = np.mean(x_copy[rank_index[0][0],:])
+            #print(f'values:{x_temp[rank_index[0][0],x_index:x_index+window_length]}, global_mean: {global_mean}')
+            #Replace k-th feature with local mean
+            x_temp[rank_index[0][0],x_index:x_index+window_length] = global_mean
+            #Append x_temp to x_replaced
+            x_replaced.append(x_temp.copy())
+    
     elif replacement_strategy == 'zeros':
-        pass
+        for i in range(0,k):
+            #Get index of k-th feature
+            rank_index = np.where(ranks==i)
+            x_index = window_length * rank_index[1][0]
+            #print(f'k: {k}, x_index:{x_index}, rank_index:{rank_index[0][0]}')
+            #Replace k-th feature with zeros
+            x_temp[rank_index[0][0],x_index:x_index+window_length] = 0
+            #Append x_temp to x_replaced
+            x_replaced.append(x_temp.copy())
+    
+    return x_replaced
+
+x_replaced = replace_k_features(all_instances[0], IG_ranks, k=20, window_length=10, replacement_strategy='local_mean')
+
+#subplot_all_IG_attributions(x_replaced[3])
+
+def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model):
+    #Rank attributions
+    IG_sum_atts, IG_ranks = rank_attributions(IG, pattern, window_length)
+    matrix_shape = np.shape(IG_sum_atts)
+    #Replace k features depending on the hyperparameters
+    x_replaced = replace_k_features(x, IG_ranks, k, window_length, replacement_strategy)
+    #Calculate AOPC with formula
+    f_x = model.predict(x)
+    summe = 0
+    all_f_x_k = []
+    for i in range(0,k):
+        #Make tf Tensor from numpy array
+        x_k = [tf.cast(np.expand_dims(x_replaced[i][j],axis=0), tf.float32) for j in range(0,matrix_shape[0])]
+        f_x_k = model.predict(x_k)
+        diff = f_x - f_x_k
+        summe = summe + diff
+        all_f_x_k.append(f_x_k)
+    AOPC = 1/k * summe
+    
+    return AOPC, all_f_x_k
+
+#%%
+subject = 6
+AOPC_SBP, all_f_x_k = calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+AOPC_DBP, all_f_x_k_test = metrics.calculate_AOPC(all_instances[subject], IG_zero_DBP[subject], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+#%%
+x_test = x_replaced[19]
+all_signals = []
+for i in range(0,6):
+    signal = np.expand_dims(x_test[i], axis=0)
+    signal_casted = tf.cast(signal, tf.float32)
+    all_signals.append(signal_casted)
+    
+aaaaaa_test = [tf.cast(np.expand_dims(x_replaced[0][i],axis=0),tf.float32) for i in range(0,6)]
+
+subplot_all_IG_attributions(x_replaced[0])
+subplot_all_IG_attributions(x_replaced[19])
 
 ##########################################################Breite##########
 ###############################################################################
