@@ -169,136 +169,6 @@ TemplatePPG1 = batch_data[4]
 TemplatePPG2 = batch_data[5]
 
 
-#%% Main code for training and testing neural network with ABP signal
-#---------------------------------------------------------------------------------------------------------------------
-# Initialize paths
-#---------------------------------------------------------------------------------------------------------------------
-
-# Main path of final preprocessed data
-#path_main = "PulseDB/pulsedb0/"
-path_main = "C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/"
-# IDs
-files = os.listdir(path_main+"dev0_abp/")
-### Necessary for using subset ###
-#files = files[:10]
-##################################
-
-#---------------------------------------------------------------------------------------------------------------------
-# Initiliaze trainingsparameter
-#---------------------------------------------------------------------------------------------------------------------
-# loo = LeaveOneOut()
-# loo.get_n_splits(files)
-
-n_splits = 3
-kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-kfold.get_n_splits(files)
-
-batch_size = 2048
-
-if __name__=="__main__":
-    print("Train TemplateNet with PulseDB")
-    all_mae_sbp, all_mae_dbp, subject_result, all_pred, all_r_sbp, all_r_dbp = [], [], [], [], [], []
-    for nr_fold, (train_index, test_index) in enumerate(kfold.split(files)):
-        if nr_fold in [1,2]:continue
-
-        # Separate training, validation and test ids
-        train_index, val_index = train_test_split(train_index, test_size=0.05)
-        train_id = [files[x] for x in train_index]
-        val_id = [files[x] for x in val_index]
-        test_id = [files[x] for x in test_index]
-        
-        #train_id = train_id[0:5]
-        #val_id = val_id[0:1]
-        
-        # Generators
-        print("Loading Datagenerator")
-        generator_train = DataGenerator_Pressure(path_main, train_id, batch_size=batch_size, shuffle=False)
-        generator_val = DataGenerator_Pressure(path_main, val_id, batch_size=batch_size, shuffle=False)
-        generator_test = DataGenerator_Pressure(path_main, test_id, batch_size=batch_size, shuffle=False)
-
-        
-        #Load model with weights
-        #model = keras.models.load_model('C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/best_model_template0.h5', compile=False)
-        model_abp = make_model_pressure()
-        
-        # Training Code
-        # Make training
-        optimizer = optimizers.Adam(learning_rate=0.0001)
-
-        es = EarlyStopping(monitor="mae", patience=10)
-        mcp = ModelCheckpoint('best_model_template_pressure'+str(nr_fold)+'.h5', monitor='val_mae', save_best_only=True)
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8)
-        model_abp.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
-
-        model_abp.fit(generator_test, #generator_train
-                        validation_data=generator_val,
-                        epochs=3,
-                        verbose=1,
-                        callbacks=[es, mcp, reduce_lr])
-        
-        # Make prediction
-        nr_data = generator_test.__len__()  #nr_data equals number of batches
-        all_mae = np.zeros((nr_data,2))
-
-
-        print('Prediction')
-        #for batch_index in range(0,nr_data):
-        for batch_index in range(0,10): #Verwendung von Batch 9 aus Testdaten für die Projetkarbeit
-            print(batch_index) 
-            batch_data, temp_true = generator_train.__getitem__(batch_index) #generator_test
-            
-
-            temp_pred = model.predict(batch_data, verbose=0, batch_size=batch_size)
-            if batch_index==0:
-                data_pred = temp_pred
-                data_true = temp_true
-                #continue        #reinschreiben für korrelationskoeffizient --> bessere Berechnung
-
-            if batch_index==nr_data-1:
-                for i in range(len(temp_pred)):
-                    if temp_pred[i,0]==0:
-                        temp_pred = temp_pred[i-1] 
-                        temp_true = temp_true[i-1]
-                        
-            data_pred = np.concatenate((data_pred, temp_pred), axis=0)
-            data_true = np.concatenate((data_true, temp_true), axis=0)
-        
-            mae_sbp_batch = mean_absolute_error(temp_pred[...,0], temp_true[:,0])
-            mae_dbp_batch = mean_absolute_error(temp_pred[...,1], temp_true[:,1])
-
-            all_mae[batch_index] = np.array([mae_sbp_batch, mae_dbp_batch])
-        r_sbp, _ = pearsonr(data_pred[:,0], data_true[:,0]) 
-        r_dbp, _ = pearsonr(data_pred[:,1], data_true[:,1]) 
-        
-        mae_sbp = np.mean(all_mae[:,0])
-        mae_dbp = np.mean(all_mae[:,1])
-        all_pred.append(np.array(data_pred))
-        
-        print(mae_sbp)
-        print(mae_dbp)
-        print(r_sbp, r_dbp)
-
-        all_mae_sbp.append(mae_sbp)
-        all_mae_dbp.append(mae_dbp)
-        all_r_sbp.append(r_sbp)
-        all_r_dbp.append(r_dbp)
-        
-    mae_sbp_mean = np.mean(all_mae_sbp)
-    mae_dbp_mean = np.mean(all_mae_dbp)
-    r_mean_sbp = np.mean(all_r_sbp)
-    r_mean_dbp = np.mean(all_r_dbp)
-    
-    print("Mean of SBP: ", mae_sbp_mean)
-    print("Mean of DBP: ", mae_dbp_mean)
-    print("Mean of r: ", r_mean_sbp, r_mean_dbp)
-    
-
-
-ABP = batch_data[0]
-ABP1 = batch_data[1]
-ABP2 = batch_data[2]
-
-
 #%% Integrated Gradients Algorithm Implementation
 def make_input_tensors(batch, batch_size):
     ''' 
@@ -339,7 +209,7 @@ def make_all_instances(batch, batch_size):
         
     Returns a batch of data as list of numpy arrays
     '''
-    #Define batch size and number of input signals for neuraln network as variables
+    #Define batch size and number of input signals for neural network as variables
     n_input_signals = 6
     l = batch_size
     
@@ -465,6 +335,31 @@ def get_integrated_gradients(segment, baseline=None, num_steps=50):
         
     return integrated_grads_SBP, integrated_grads_DBP
 
+#%%
+def normalize_IG(IG, method):
+    IG_matrix = np.squeeze(IG.copy())
+    matrix_shape = np.shape(IG_matrix)
+    IG_vector = np.reshape(IG_matrix,(1,matrix_shape[0]*matrix_shape[1]))
+    IG_max = np.max(IG_vector)
+    IG_min = np.min(IG_vector)
+    
+    mean = np.mean(IG_matrix, axis=1)
+    std = np.std(IG_matrix, axis=1)
+
+    if method == 'min_max':
+        IG = (IG-IG_min) / (IG_max-IG_min)
+    elif method == 'max':
+        IG = IG/IG_max
+    elif method == 'zero_mean':
+        IG = np.zeros((6,1000))
+        for i in range(0,matrix_shape[0]):
+            IG[i,:] = (IG_matrix[i,:]-mean[i])/std[i]
+    
+    return IG
+    
+IG_SBP_normalized = normalize_IG(IG_SBP, method='zero_mean')
+
+#%%
 #Make Input Data Tensors --> correct format for Integrated Gradients Algorithm
 #all_instances = make_all_instances(batch_data, batch_size)
 all_instances = make_input_tensors(batch_data, batch_size)
@@ -1038,6 +933,19 @@ plot_3PPG_heatmap_scatter_subplot(TemplatePPG1[Instanz1], TemplatePPG1[Instanz2]
 plot_3PPG_heatmap_scatter_subplot(TemplatePPG2[Instanz1], TemplatePPG2[Instanz2], TemplatePPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],6)
 
 
+#%% Calculate AOPC for all 100 IG examples
+all_AOPC_SBP = []
+all_AOPC_DBP = []
+for i in range(0,len(IG_zero_SBP)):
+    print(i)
+    AOPC_SBP, all_f_x_k = metrics.calculate_AOPC(all_instances[i], IG_zero_SBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+    AOPC_DBP, all_f_x_k = metrics.calculate_AOPC(all_instances[i], IG_zero_DBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+    all_AOPC_SBP.append(AOPC_SBP[0][0])
+    all_AOPC_DBP.append(AOPC_DBP[0][1])
+    
+AOPC_SBP_mean = np.mean(all_AOPC_SBP)
+AOPC_DBP_mean = np.mean(all_AOPC_DBP)
+    
 #%% AOPC Metric
 def rank_attributions(IG, pattern, window_length):
     IG_matrix = np.squeeze(IG)
@@ -1146,13 +1054,13 @@ def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model
     #Replace k features depending on the hyperparameters
     x_replaced = replace_k_features(x, IG_ranks, k, window_length, replacement_strategy)
     #Calculate AOPC with formula
-    f_x = model.predict(x)
+    f_x = model.predict(x, verbose=0)
     summe = 0
     all_f_x_k = []
     for i in range(0,k):
         #Make tf Tensor from numpy array
         x_k = [tf.cast(np.expand_dims(x_replaced[i][j],axis=0), tf.float32) for j in range(0,matrix_shape[0])]
-        f_x_k = model.predict(x_k)
+        f_x_k = model.predict(x_k, verbose=0)
         diff = f_x - f_x_k
         summe = summe + diff
         all_f_x_k.append(f_x_k)
@@ -1160,10 +1068,114 @@ def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model
     
     return AOPC, all_f_x_k
 
+
+#%% APT (Ablation Percentage Threshold) Metric
+
+def replace_feature(x, x_ground_truth, ranks, k, window_length, replacement_strategy):
+    x_temp = x.copy()
+    #replace features with defined replacement_strategy
+    if replacement_strategy == 'local_mean':
+        #replace k-th feature
+        #Get index of k-th feature
+        rank_index = np.where(ranks==k)
+        x_index = window_length * rank_index[1][0]
+        #print(f'k: {k}, x_index:{x_index}, rank_index:{rank_index[0][0]}')
+        #Calculate local mean
+        local_mean = np.mean(x_temp[rank_index[0][0],x_index:x_index+window_length])
+        #print(f'values:{x_temp[rank_index[0][0],x_index:x_index+window_length]}, local_mean: {local_mean}')
+        #Replace k-th feature with local mean
+        x_temp[rank_index[0][0],x_index:x_index+window_length] = local_mean
+        #Append x_temp to x_replaced
+        x_replaced = x_temp
+            
+    elif replacement_strategy == 'global_mean':
+        x_copy = x_ground_truth.copy()
+        #replace k-th feature
+        #Get index of k-th feature
+        rank_index = np.where(ranks==k)
+        x_index = window_length * rank_index[1][0]
+        #print(f'k: {k}, x_index:{x_index}, rank_index:{rank_index[0][0]}')
+        #Calculate local mean
+        global_mean = np.mean(x_copy[rank_index[0][0],:])
+        #print(f'values:{x_temp[rank_index[0][0],x_index:x_index+window_length]}, global_mean: {global_mean}')
+        #Replace k-th feature with local mean
+        x_temp[rank_index[0][0],x_index:x_index+window_length] = global_mean
+        #Append x_temp to x_replaced
+        x_replaced = x_temp.copy()
+    
+    elif replacement_strategy == 'zeros':
+        #replace k-th
+        rank_index = np.where(ranks==k)
+        x_index = window_length * rank_index[1][0]
+        #print(f'k: {k}, x_index:{x_index}, rank_index:{rank_index[0][0]}')
+        #Replace k-th feature with zeros
+        x_temp[rank_index[0][0],x_index:x_index+window_length] = 0
+        #Append x_temp to x_replaced
+        x_replaced = x_temp
+    
+    return x_replaced
+    
+def calculate_APT(x, IG, alpha, pattern, window_length, replacement_strategy, model, mode):
+    IG_sum_atts, IG_ranks = rank_attributions(IG, pattern, window_length)
+    matrix_shape = np.shape(IG_sum_atts)
+    x_temp = x.copy()
+    x_temp = np.squeeze(np.array(x_temp))
+    x_replaced = x_temp.copy()
+    J = np.size(IG_ranks)
+    k = 0
+    condition = False
+    if mode == 'SBP':
+        #Calculate Ground Truth Value
+        pred = model.predict(x, verbose=0)
+        SBP_true = pred[0][0]
+        #Calculate specific thresholds
+        SBP_Up_lim = SBP_true + (alpha*SBP_true)
+        SBP_Lo_lim = SBP_true - (alpha*SBP_true)
+        while condition == False:
+            x_replaced = replace_feature(x_replaced, x_temp, IG_ranks, k, window_length, replacement_strategy)
+            #Make tf Tensor from numpy array
+            x_replaced_tensor = [tf.cast(np.expand_dims(x_replaced[j],axis=0), tf.float32) for j in range(0,matrix_shape[0])]
+            pred_replaced = model.predict(x_replaced_tensor, verbose=0)
+            SBP_pred = pred_replaced[0][0]
+            if SBP_pred > SBP_Up_lim:
+                condition = True
+            elif SBP_pred < SBP_Lo_lim:
+                condition = True
+            else:
+                k = k+1
+    elif mode == 'DBP':
+        pred = model.predict(x, verbose=0)
+        DBP_true = pred[0][1]
+        #Calculate specific thresholds
+        DBP_Up_lim = DBP_true + (alpha*DBP_true)
+        DBP_Lo_lim = DBP_true - (alpha*DBP_true)
+        while condition == False:
+            #Make tf tensor from numpy array
+            x_replaced_tensor = [tf.cast(np.expand_dims(x_replaced[j],axis=0), tf.float32) for j in range(0,matrix_shape[0])]
+            x_replaced = replace_feature(x_replaced, x_temp, IG_ranks, k, window_length, replacement_strategy)
+            pred_replaced = model.predict(x_replaced_tensor, verbose=0)
+            DBP_pred = pred_replaced[0][1]
+            if DBP_pred > DBP_Up_lim:
+                condition = True
+            elif DBP_pred < DBP_Lo_lim:
+                condition = True
+            else:
+                k = k+1
+    elif mode == 'ABP':
+        pass
+    
+    k = k+1
+    APT = k/J
+    
+    return APT, k
+
+APT, k = calculate_APT(all_instances[0], IG_zero_SBP[0], alpha=0.05, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model, mode='SBP')
+print(f'APT: {APT*100}%, k: {k}')
 #%%
-subject = 6
-AOPC_SBP, all_f_x_k = calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
-AOPC_DBP, all_f_x_k_test = metrics.calculate_AOPC(all_instances[subject], IG_zero_DBP[subject], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+subject = 59
+AOPC_SBP, all_f_x_k = calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+AOPC_DBP, all_f_x_k_DBP = metrics.calculate_AOPC(all_instances[subject], IG_zero_DBP[subject], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+print(f'Subject: {subject} --> AOPC_SBP: {AOPC_SBP[0][0]}, AOPC_DBP: {AOPC_DBP[0][1]}')
 #%%
 x_test = x_replaced[19]
 all_signals = []
@@ -1176,6 +1188,9 @@ aaaaaa_test = [tf.cast(np.expand_dims(x_replaced[0][i],axis=0),tf.float32) for i
 
 subplot_all_IG_attributions(x_replaced[0])
 subplot_all_IG_attributions(x_replaced[19])
+
+#plt.figure()
+#plt.plot(np.array(all_AOPC_DBP), diff_test_DBP, 'o', color='black')
 
 ##########################################################Breite##########
 ###############################################################################
