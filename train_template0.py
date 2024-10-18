@@ -24,6 +24,7 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from tensorflow import keras
 import matplotlib.pyplot as plt
 import metrics as metrics
+import visualization as vs
 
 keras.backend.clear_session()
 
@@ -167,6 +168,11 @@ PPG2 = batch_data[2]
 TemplatePPG = batch_data[3]
 TemplatePPG1 = batch_data[4]
 TemplatePPG2 = batch_data[5]
+
+all_input_signals = []
+for i in range(0,6):
+    all_input_signals.append(batch_data[i])
+    
 
 
 #%% Integrated Gradients Algorithm Implementation
@@ -343,8 +349,13 @@ def normalize_IG(IG, method):
     IG_max = np.max(IG_vector)
     IG_min = np.min(IG_vector)
     
-    mean = np.mean(IG_matrix, axis=1)
-    std = np.std(IG_matrix, axis=1)
+    all_mean = []
+    all_std = []
+    for i in range(matrix_shape[0]):
+        mean = np.mean(IG_matrix[i])
+        std = np.std(IG_matrix[i])
+        all_mean.append(mean)
+        all_std.append(std)
 
     if method == 'min_max':
         IG = (IG-IG_min) / (IG_max-IG_min)
@@ -353,11 +364,17 @@ def normalize_IG(IG, method):
     elif method == 'zero_mean':
         IG = np.zeros((6,1000))
         for i in range(0,matrix_shape[0]):
-            IG[i,:] = (IG_matrix[i,:]-mean[i])/std[i]
+            IG[i,:] = (IG_matrix[i,:]-all_mean[i])/all_std[i]
     
     return IG
+
+def sum_IG(IG):
+    IG_summed = np.sum(IG, axis=0)
     
-IG_SBP_normalized = normalize_IG(IG_SBP, method='zero_mean')
+    return IG_summed
+    
+
+IG_SBP_normalized = normalize_IG(IG_zero_SBP[0], method='zero_mean')
 
 #%%
 #Make Input Data Tensors --> correct format for Integrated Gradients Algorithm
@@ -407,386 +424,8 @@ IG_random_DBP = np.load(target_path+'IG/IG_random_DBP.npy')
 IG_zero_SBP_25steps = np.load(target_path+'IG/IG_zero_SBP_new.npy')
 IG_zero_DBP_25steps = np.load(target_path+'IG/IG_zero_DBP_new.npy')
 
-
-#%% Visualizing Results
-def subplot_all_input_signals(batch_data, segment_nr, n_input_signals):
-    '''
-    Subplots all input signals of a segment from a given batch over the samples
-    
-    Args:
-        - batch_data = One batch of 2048 segments
-        - segment_nr = One segment
-        - n_input_signals = Number of input signals
-       
-    '''
-    def get_instance(batch_data, instance_nr, n_input_signals):
-        instance = []
-    
-        for i in range(0,n_input_signals):
-            signal =  batch_data[i][instance_nr][:]
-            instance.append(signal)
-        
-        return instance
-    
-    instance = get_instance(batch_data,segment_nr, n_input_signals)
-    
-    fig, axs = plt.subplots(6, sharex=True)
-    fig.suptitle('All Input Signals')
-    fig.supxlabel('Samples')
-    fig.supylabel('Amplitude')
-    axs[0].plot(range(0,1000),instance[0])
-    axs[1].plot(range(0,1000),instance[1])
-    axs[2].plot(range(0,1000),instance[2])
-    axs[3].plot(range(0,1000),instance[3])
-    axs[4].plot(range(0,1000),instance[4])
-    axs[5].plot(range(0,1000),instance[5])  
-    plt.setp(axs, xlim=(0,1000))
-    
-def subplot_all_IG_attributions(IG):
-    '''
-    Subplot all six IG signals of a segment over the samples
-    
-    Args:
-        - IG: IG attributions of one segment for all six input signals
-       
-    '''
-    fig, axs = plt.subplots(6, sharex=True)
-    fig.suptitle('Attributions for all Input signals')
-    fig.supxlabel('Samples')
-    fig.supylabel('Attributions')
-    axs[0].plot(range(0,1000), np.squeeze(IG[0]))
-    axs[0].grid()
-    axs[1].plot(range(0,1000), np.squeeze(IG[1]))
-    axs[1].grid()
-    axs[2].plot(range(0,1000), np.squeeze(IG[2]))
-    axs[2].grid()
-    axs[3].plot(range(0,1000), np.squeeze(IG[3]))
-    axs[3].grid()
-    axs[4].plot(range(0,1000), np.squeeze(IG[4]))
-    axs[4].grid()
-    axs[5].plot(range(0,1000), np.squeeze(IG[5]))
-    axs[5].grid()
-
-    
-def plot_signal_heatmap(signal, IG, signal_nr):
-    '''
-    Plot one time signal with the corresponding IG attributions as a heatmap over the samples
-    
-    Args:
-        - signal: one time signal of the segment (PPG, PPG1, PPG2, TemplatePPG, TemplatePPG1,
-                                                  TemplatePPG2)
-        - IG: IG attributions of one segment
-        - signal_nr: specifies the desired signal number for the IG attributions; must be the same
-                     as signal (0 = PPG, 1 = PPG1, 2 = PPG2, 3 = TemplatePPG, 4 = TemplatePPG2,
-                                5 = TemplatePPG2)
-       
-    '''
-    IG = IG[signal_nr][0][0:1000].reshape((1,1000))
-    t = range(0,1000)
-    plt.figure()
-    s = plt.scatter(t, signal, c=IG, cmap='jet')#, ec='k')
-    if signal_nr == 0:
-        plt.title('PPG0 Signal + Attributions as heatmap and signal')
-        #plt.plot(t,np.squeeze(IG), linewidth=1, color='k')
-    elif signal_nr == 1:
-        plt.title('PPG1 Signal + Attributions as heatmap')
-        #plt.plot(t,np.squeeze(IG), linewidth=0.8, color='k')
-    elif signal_nr == 2:
-        plt.title('PPG2 Signal + Attributions as heatmap')
-    elif signal_nr == 3:
-        plt.title('Template Signal 1 + Attributions as heatmap and signal')
-    elif signal_nr == 4:
-        plt.title('Template Signal 2 + Attributions as heatmap and signal')
-    elif signal_nr == 5:
-        plt.title('Template Signal 3 + Attributions as heatmap and signal')
-    plt.plot(t,signal, linewidth=0.8, color='k')
-    plt.xlim([0,1000])
-    plt.xlabel('Samples')
-    plt.ylabel('Amplitude/Attributions')
-    plt.colorbar(s)
-    plt.grid()
-    plt.show()
-    
-def plot_signal_with_IG(signal,IG, signal_nr):
-    '''
-    Plots a signal and the IG attributions over the samples in the same plot
-    
-    Args:
-        - IG: IG attributions of one segment for all six input signals
-        - signal: one time signal
-        - signal_nr: specifies the desired signal number for the IG attributions; must be the same
-                     as signal (0 = PPG, 1 = PPG1, 2 = PPG2, 3 = TemplatePPG, 4 = TemplatePPG2,
-                                5 = TemplatePPG2)
-       
-    '''
-    IG = IG[signal_nr]
-    plt.figure()
-    plt.xlabel('Samples')
-    plt.ylabel('Amplitude/Attributions')
-    if signal_nr == 0:
-        plt.title('PPG0 Signal + Attributions')
-    elif signal_nr == 1:
-        plt.title('PPG1 Signal + Attributions')
-    elif signal_nr == 2:
-        plt.title('PPG2 Signal + Attributions')
-    elif signal_nr == 3:
-        plt.title('Template Signal 1 + Attributions')
-    elif signal_nr == 4:
-        plt.title('Template Signal 2 + Attributions')
-    elif signal_nr == 5:
-        plt.title('Template Signal 3 + Attributions')
-    plt.plot(range(0,1000),signal)
-    plt.plot(range(0,1000),np.squeeze(IG))
-    plt.grid()
-    plt.show()
-    
-def plot_PPG_heatmap_scatter_subplot(PPG, PPG1, PPG2, IG):
-    '''
-    Subplot PPG, PPG1 and PPG2 with the corresponding IG attributions as a heatmap over the samples
-    
-    Args:
-        - PPG: PPG time signal
-        - PPG1: first derivative of PPG
-        - PPG2: second derivative of PPG
-        - IG: IG attributions of one segment for all six input signals
-       
-    '''
-    IG0 = IG[0][0][0:1000].reshape((1,1000))
-    IG1 = IG[1][0][0:1000].reshape((1,1000))
-    IG2 = IG[2][0][0:1000].reshape((1,1000))
-    t = range(0,1000)
-    
-    fig, axs = plt.subplots(3, sharex=True)
-    fig.suptitle('PPG, PPG1 and PPG2 + Attributions as heatmap')
-    fig.supxlabel('Samples')
-    fig.supylabel('Amplitude/Attributions')
-    s0 = axs[0].scatter(t, PPG, c=IG0, cmap='jet')#, ec='k')
-    axs[0].plot(range(0,1000),PPG, linewidth=0.5, color='k')
-    axs[0].grid()
-    s1 = axs[1].scatter(t, PPG1, c=IG1, cmap='jet')#, ec='k')
-    axs[1].plot(range(0,1000),PPG1, linewidth=0.5, color='k')
-    axs[1].grid()
-    s2 = axs[2].scatter(t, PPG2, c=IG2, cmap='jet')#, ec='k')
-    axs[2].plot(range(0,1000),PPG2, linewidth=0.5, color='k')
-    axs[2].grid()
-    #Use multiple colorbars
-    fig.colorbar(s0)
-    fig.colorbar(s1)
-    fig.colorbar(s2)
-    plt.setp(axs, xlim=(0,1000))
-    #Use One Colorbar
-    #fig.subplots_adjust(right=0.8)
-    #cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    #fig.colorbar(s0, cax=cbar_ax)
-
-def plot_templates_heatmap_scatter_subplot(TPPG, TPPG1, TPPG2, IG):
-    '''
-    Subplot Template PPG, Template PPG1 and Template PPG2 with the corresponding IG attributions
-    as a heatmap over the samples
-    
-    Args:
-        - TPPG: Template signal for PPG
-        - PPG1: Template signal for first derivative of PPG
-        - PPG2: Template signal for second derivative of PPG
-        - IG: IG attributions of one segment for all six input signals
-       
-    '''
-    IG0 = IG[3][0][0:1000].reshape((1,1000))
-    IG1 = IG[4][0][0:1000].reshape((1,1000))
-    IG2 = IG[5][0][0:1000].reshape((1,1000))
-    t = range(0,1000)
-    
-    fig, axs = plt.subplots(3, sharex=True)
-    fig.suptitle('Template signals + Attributions as heatmap')
-    fig.supxlabel('Samples')
-    fig.supylabel('Amplitude/Attributions')
-    s0 = axs[0].scatter(t, TPPG, c=IG0, cmap='jet')
-    axs[0].plot(range(0,1000),TPPG, linewidth=0.5, color='k')
-    axs[0].grid()
-    s1 = axs[1].scatter(t, TPPG1, c=IG1, cmap='jet')
-    axs[1].plot(range(0,1000),TPPG1, linewidth=0.5, color='k')
-    axs[1].grid()
-    s2 = axs[2].scatter(t, TPPG2, c=IG2, cmap='jet')
-    axs[2].plot(range(0,1000),TPPG2, linewidth=0.5, color='k')
-    axs[2].grid()
-    #Use multiple colorbars --> one for each subplot 
-    fig.colorbar(s0)
-    fig.colorbar(s1)
-    fig.colorbar(s2)
-    plt.setp(axs, xlim=(0,1000))
-    #Use One Colorbar --> one for all subplots
-    #fig.subplots_adjust(right=0.8)
-    #cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    #fig.colorbar(s0, cax=cbar_ax)
-    
-def subplot_heatmap_and_IG(PPG, IG, signal_nr):
-    '''
-    Subplot one time signal and the corresponding IG attributions over the samples
-    as a heatmap
-    
-    Args:
-        - TPPG: Template signal for PPG
-        - PPG1: Template signal for first derivative of PPG
-        - PPG2: Template signal for second derivative of PPG
-        - IG: IG attributions of one segment for all six input signals
-       
-    '''
-    
-    IG0 = IG[signal_nr][0][0:1000].reshape((1,1000))
-    t = range(0,1000)
-    
-    fig, axs = plt.subplots(2, sharex=True)
-    if signal_nr == 0:
-        fig.suptitle('PPG0 Signal + Attributions as heatmap and signal')
-    elif signal_nr == 1:
-        fig.suptitle('PPG1 Signal + Attributions as heatmap and signal')
-    elif signal_nr == 2:
-        fig.suptitle('PPG2 Signal + Attributions as heatmap and signal')
-    elif signal_nr == 3:
-        fig.suptitle('Template Signal 1 + Attributions as heatmap and signal')
-    elif signal_nr == 4:
-        fig.suptitle('Template Signal 2 + Attributions as heatmap and signal')
-    elif signal_nr == 5:
-        fig.suptitle('Template Signal 3 + Attributions as heatmap and signal')
-    fig.supxlabel('Samples')
-    fig.supylabel('Amplitude/Attributions')
-    s0 = axs[0].scatter(t, PPG, c=IG0, cmap='jet', ec='k')
-    axs[0].plot(range(0,1000),PPG, linewidth=0.5)
-    axs[1].plot(range(0,1000),np.squeeze(IG0))
-    
-    fig.colorbar(s0)
-
-    
-def subplot_many_templates_in_one(IG):
-    '''
-    Subplot IG attributions of 20 segments for TemplatePPG, TemplatePPG1 and TemplatePPG2 over
-    the samples
-    
-    Args:
-        - IG: IG attributions of 20 segments for all six input signals
-       
-    '''
-    t = range(0,1000)
-    fig, axs = plt.subplots(3)
-    fig.suptitle('All Templatesignal Attributions')
-    fig.supxlabel('Samples')
-    fig.supylabel('Attributions')
-    for i in range(0,20):
-        axs[0].plot(t, np.squeeze(IG[i][3]))
-        axs[1].plot(t, np.squeeze(IG[i][4]))
-        axs[2].plot(t, np.squeeze(IG[i][5]))
-    axs[0].grid()
-    axs[1].grid()
-    axs[2].grid()
-    
-def plot_IG_for_interpolation_steps(IG25, IG75, IG175):
-    '''
-    Subplot 3 different IG attributions over the samples for all six time signals
-    
-    Args:
-        - IG25: IG attributions for one segment calculated with 25 interpolation steps
-        - IG75: IG attributions for one segment calculated with 75 interpolation steps
-        - IG175: IG attributions for one segment calculated with 175 interpolation steps
-       
-    '''
-    fig, axs = plt.subplots(6, sharex=True)
-    fig.suptitle('All Signals + Attributions with different step size')
-    fig.supxlabel('Samples')
-    fig.supylabel('Attributions')
-    axs[0].plot(range(0,1000), np.squeeze(IG25[0]), label='25')
-    axs[0].plot(range(0,1000), np.squeeze(IG75[0]), label='75')
-    axs[0].plot(range(0,1000), np.squeeze(IG175[0]), label='175')
-    axs[0].legend()
-    axs[0].grid()
-    axs[1].plot(range(0,1000), np.squeeze(IG25[1]))
-    axs[1].plot(range(0,1000), np.squeeze(IG75[1]))
-    axs[1].plot(range(0,1000), np.squeeze(IG175[1]))
-    axs[1].grid()
-    axs[2].plot(range(0,1000), np.squeeze(IG25[2]))
-    axs[2].plot(range(0,1000), np.squeeze(IG75[2]))
-    axs[2].plot(range(0,1000), np.squeeze(IG175[2]))
-    axs[2].grid()
-    axs[3].plot(range(0,1000), np.squeeze(IG25[3]))
-    axs[3].plot(range(0,1000), np.squeeze(IG75[3]))
-    axs[3].plot(range(0,1000), np.squeeze(IG175[3]))
-    axs[3].grid()
-    axs[4].plot(range(0,1000), np.squeeze(IG25[4]))
-    axs[4].plot(range(0,1000), np.squeeze(IG75[4]))
-    axs[4].plot(range(0,1000), np.squeeze(IG175[4]))
-    axs[4].grid()
-    axs[5].plot(range(0,1000), np.squeeze(IG25[5]))
-    axs[5].plot(range(0,1000), np.squeeze(IG75[5]))
-    axs[5].plot(range(0,1000), np.squeeze(IG175[5]))
-    axs[5].grid()
-        
-def plot_3PPG_heatmap_scatter_subplot(PPG, PPG1, PPG2, IG, IG1, IG2, signal):
-    '''
-    Subplot PPG, PPG1 and PPG2 with the corresponding IG attributions as a heatmap over the samples
-    
-    Args:
-        - PPG: PPG time signal 1
-        - PPG1: PPG time signal 2
-        - PPG2: PPG time signal 3
-        
-        - IG: IG attributions 1 of one segment for all six input signals
-        - IG: IG attributions 2 of one segment for all six input signals
-        - IG: IG attributions 3 of one segment for all six input signals
-       
-    '''
-    
-    if signal == 1:
-        signal_nr = 0
-    elif signal == 2:
-        signal_nr = 1
-    elif signal == 3:
-        signal_nr = 2
-    elif signal == 4:
-        signal_nr = 3
-    elif signal == 5:
-        signal_nr = 4
-    elif signal == 6:
-        signal_nr = 5
-        
-    IG_0 = IG[signal_nr][0][0:1000].reshape((1,1000))
-    IG_1 = IG1[signal_nr][0][0:1000].reshape((1,1000))
-    IG_2 = IG2[signal_nr][0][0:1000].reshape((1,1000))
-    t = range(0,1000)
-    
-    fig, axs = plt.subplots(3, sharex=True)
-    if signal_nr == 0:
-        fig.suptitle('PPG from 3 time segments + Attributions as heatmap')
-    elif signal_nr == 1:
-        fig.suptitle('PPG1 from 3 time segments + Attributions as heatmap')
-    elif signal_nr == 2:
-        fig.suptitle('PPG2 from 3 time segments + Attributions as heatmap')
-    elif signal_nr == 3:
-        fig.suptitle('Template PPG from 3 time segments + Attributions as heatmap')
-    elif signal_nr == 4:
-        fig.suptitle('Template PPG1 from 3 time segments + Attributions as heatmap')
-    elif signal_nr == 5:
-        fig.suptitle('Template PPG2 from 3 time segments + Attributions as heatmap')
-    fig.supxlabel('Samples')
-    fig.supylabel('Amplitude/Attributions')
-    s0 = axs[0].scatter(t, PPG, c=IG_0, cmap='jet')#, ec='k')
-    axs[0].plot(range(0,1000),PPG, linewidth=0.5, color='k')
-    axs[0].grid()
-    s1 = axs[1].scatter(t, PPG1, c=IG_1, cmap='jet')#, ec='k')
-    axs[1].plot(range(0,1000),PPG1, linewidth=0.5, color='k')
-    axs[1].grid()
-    s2 = axs[2].scatter(t, PPG2, c=IG_2, cmap='jet')#, ec='k')
-    axs[2].plot(range(0,1000),PPG2, linewidth=0.5, color='k')
-    axs[2].grid()
-    #Use multiple colorbars
-    fig.colorbar(s0)
-    fig.colorbar(s1)
-    fig.colorbar(s2)
-    plt.setp(axs, xlim=(0,1000))
-    #Use One Colorbar
-    #fig.subplots_adjust(right=0.8)
-    #cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    #fig.colorbar(s0, cax=cbar_ax)
 #%% Subplot all input signals
-subplot_all_input_signals(batch_data, 22)
+vs.subplot_all_input_signals(batch_data, 22)
 
 #%% Visualize some zero baseline examples for SBP 
 #Beispielsegment 1 SBP PPG0 --> Instanz 80
@@ -800,15 +439,15 @@ segment_nr = 81
 signal_nr = 0
 
 #Plot all IG attributions for one segment
-subplot_all_IG_attributions(IG_zero_SBP[segment_nr])
+vs.subplot_all_IG_attributions(IG_zero_SBP[segment_nr])
 #Plot Signal with IG in one plot
 #plot_signal_with_IG(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
 #Plot Signal with attributions as heatmap
-plot_signal_heatmap(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
+vs.plot_signal_heatmap(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
 #Subplot Signal with attributions as heatmap and plot IG as signal
 #subplot_heatmap_and_IG(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
 #Plot PPG0,PPG1,PPG2 with attributions as heatmap in one subplot
-plot_PPG_heatmap_scatter_subplot(PPG[segment_nr], PPG1[segment_nr], PPG2[segment_nr], IG_zero_SBP[segment_nr])
+vs.plot_PPG_heatmap_scatter_subplot(PPG[segment_nr], PPG1[segment_nr], PPG2[segment_nr], IG_zero_SBP[segment_nr])
 #Plot all Attributions for the template signals
 #plot_templates_heatmap_scatter_subplot(TemplatePPG[segment_nr], TemplatePPG1[segment_nr], TemplatePPG2[segment_nr], IG_zero_SBP[segment_nr])
 #Plot many Templates in one
@@ -826,15 +465,15 @@ segment_nr = 44
 signal_nr = 2
 
 #Plot all IG attributions for one segment
-subplot_all_IG_attributions(IG_zero_DBP[segment_nr])
+vs.subplot_all_IG_attributions(IG_zero_DBP[segment_nr])
 #Plot Signal with IG in one plot
 #plot_signal_with_IG(PPG2[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
 #Plot Signal with attributions as heatmap
-plot_signal_heatmap(PPG2[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
+vs.plot_signal_heatmap(PPG2[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
 #Subplot Signal with attributions as heatmap and plot IG as signal
 #subplot_heatmap_and_IG(PPG[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
 #Plot PPG0,PPG1,PPG2 with attributions as heatmap in one subplot
-plot_PPG_heatmap_scatter_subplot(PPG[segment_nr], PPG1[segment_nr], PPG2[segment_nr], IG_zero_DBP[segment_nr])
+vs.plot_PPG_heatmap_scatter_subplot(PPG[segment_nr], PPG1[segment_nr], PPG2[segment_nr], IG_zero_DBP[segment_nr])
 #Plot all Attributions for the template signals
 #plot_templates_heatmap_scatter_subplot(TemplatePPG[segment_nr], TemplatePPG1[segment_nr], TemplatePPG2[segment_nr], IG_zero_DBP[segment_nr])
 
@@ -849,9 +488,9 @@ IG_75steps_SBP, IG_75steps_DBP = get_integrated_gradients(all_instances[segment_
 IG_175steps_SBP, IG_175steps_DBP = get_integrated_gradients(all_instances[segment_nr], baseline=None, num_steps=175)
 
 #Plot all IG attributions with different step sizes for SBP
-plot_IG_for_interpolation_steps(IG_25steps_SBP, IG_75steps_SBP, IG_175steps_SBP)
+vs.plot_IG_for_interpolation_steps(IG_25steps_SBP, IG_75steps_SBP, IG_175steps_SBP)
 #Plot all IG attributions with different step sizes for SBP
-plot_IG_for_interpolation_steps(IG_25steps_DBP, IG_75steps_DBP, IG_175steps_DBP)
+vs.plot_IG_for_interpolation_steps(IG_25steps_DBP, IG_75steps_DBP, IG_175steps_DBP)
 
 
 #%% Einfluss der Baseline
@@ -865,18 +504,18 @@ IG_random_SBP_E2, IG_random_DBP_E2 = get_integrated_gradients(all_instances[Inst
 
 
 #Subplot PPG Attributions for PPG0,PPG1 and PPG2 for Uniform and Zero Baseline for SBP Example
-plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_random_SBP_E1)
-plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_zero_SBP[Instanz_E1])
+vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_random_SBP_E1)
+vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_zero_SBP[Instanz_E1])
 #Plot Templatesignal attributions
-plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_random_SBP_E1,)
-plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_zero_SBP[Instanz_E1],)
+vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_random_SBP_E1,)
+vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_zero_SBP[Instanz_E1],)
 
 #Subplot PPG Attributions for PPG0,PPG1 and PPG2 for Uniform and Zero Baseline for DBP Example
-plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_random_SBP_E1)
-plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_zero_SBP[Instanz_E1])
+vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_random_SBP_E1)
+vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_zero_SBP[Instanz_E1])
 #Plot Templatesignal attributions
-plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_random_SBP_E1,)
-plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_zero_SBP[Instanz_E1],)
+vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_random_SBP_E1,)
+vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_zero_SBP[Instanz_E1],)
 
 
 #%% Visualize general results of TemplateNet
@@ -915,22 +554,22 @@ Instanz1 = 80
 Instanz2= 44
 Instanz3= 81
 #Plot 3 PPG and their integrated gradients
-plot_3PPG_heatmap_scatter_subplot(PPG[Instanz1], PPG[Instanz2], PPG[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],1)
+vs.plot_3PPG_heatmap_scatter_subplot(PPG[Instanz1], PPG[Instanz2], PPG[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],1)
 
 #Erste Ableitung
-plot_3PPG_heatmap_scatter_subplot(PPG1[Instanz1], PPG1[Instanz2], PPG1[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],2)
+vs.plot_3PPG_heatmap_scatter_subplot(PPG1[Instanz1], PPG1[Instanz2], PPG1[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],2)
 
 #Zweite Ableitung
-plot_3PPG_heatmap_scatter_subplot(PPG2[Instanz1], PPG2[Instanz2], PPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],3)
+vs.plot_3PPG_heatmap_scatter_subplot(PPG2[Instanz1], PPG2[Instanz2], PPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],3)
 
 #PPG Template
-plot_3PPG_heatmap_scatter_subplot(TemplatePPG[Instanz1], TemplatePPG[Instanz2], TemplatePPG[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],4)
+vs.plot_3PPG_heatmap_scatter_subplot(TemplatePPG[Instanz1], TemplatePPG[Instanz2], TemplatePPG[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],4)
 
 #Erste Ableitung Template
-plot_3PPG_heatmap_scatter_subplot(TemplatePPG1[Instanz1], TemplatePPG1[Instanz2], TemplatePPG1[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],5)
+vs.plot_3PPG_heatmap_scatter_subplot(TemplatePPG1[Instanz1], TemplatePPG1[Instanz2], TemplatePPG1[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],5)
 
 #Zweite Ableitung Template
-plot_3PPG_heatmap_scatter_subplot(TemplatePPG2[Instanz1], TemplatePPG2[Instanz2], TemplatePPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],6)
+vs.plot_3PPG_heatmap_scatter_subplot(TemplatePPG2[Instanz1], TemplatePPG2[Instanz2], TemplatePPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],6)
 
 
 #%% Calculate AOPC for all 100 IG examples
@@ -938,8 +577,8 @@ all_AOPC_SBP = []
 all_AOPC_DBP = []
 for i in range(0,len(IG_zero_SBP)):
     print(i)
-    AOPC_SBP, all_f_x_k = metrics.calculate_AOPC(all_instances[i], IG_zero_SBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
-    AOPC_DBP, all_f_x_k = metrics.calculate_AOPC(all_instances[i], IG_zero_DBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+    AOPC_SBP, all_f_x_k_SBP = metrics.calculate_AOPC(all_instances[i], IG_zero_SBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+    AOPC_DBP, all_f_x_k_DBP = metrics.calculate_AOPC(all_instances[i], IG_zero_DBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
     all_AOPC_SBP.append(AOPC_SBP[0][0])
     all_AOPC_DBP.append(AOPC_DBP[0][1])
     
@@ -1043,9 +682,10 @@ def replace_k_features(x, ranks, k, window_length, replacement_strategy):
     
     return x_replaced
 
-x_replaced = replace_k_features(all_instances[0], IG_ranks, k=20, window_length=10, replacement_strategy='local_mean')
+x_replaced = replace_k_features(all_instances[0], IG_ranks, k=50, window_length=10, replacement_strategy='local_mean')
 
-#subplot_all_IG_attributions(x_replaced[3])
+vs.subplot_all_IG_attributions(x_replaced[1])
+vs.subplot_all_IG_attributions(x_replaced[49])
 
 def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model):
     #Rank attributions
@@ -1058,6 +698,7 @@ def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model
     summe = 0
     all_f_x_k = []
     for i in range(0,k):
+        #print(f'k: {k}')
         #Make tf Tensor from numpy array
         x_k = [tf.cast(np.expand_dims(x_replaced[i][j],axis=0), tf.float32) for j in range(0,matrix_shape[0])]
         f_x_k = model.predict(x_k, verbose=0)
@@ -1172,25 +813,33 @@ def calculate_APT(x, IG, alpha, pattern, window_length, replacement_strategy, mo
 APT, k = calculate_APT(all_instances[0], IG_zero_SBP[0], alpha=0.05, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model, mode='SBP')
 print(f'APT: {APT*100}%, k: {k}')
 #%%
-subject = 59
-AOPC_SBP, all_f_x_k = calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+subject = 50
+k = 10
+window_length = 5
+AOPC_SBP, all_f_x_k_SBP = calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=k, pattern='morf', window_length=window_length, replacement_strategy='global_mean', model=model)
 AOPC_DBP, all_f_x_k_DBP = metrics.calculate_AOPC(all_instances[subject], IG_zero_DBP[subject], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
-print(f'Subject: {subject} --> AOPC_SBP: {AOPC_SBP[0][0]}, AOPC_DBP: {AOPC_DBP[0][1]}')
-#%%
-x_test = x_replaced[19]
-all_signals = []
-for i in range(0,6):
-    signal = np.expand_dims(x_test[i], axis=0)
-    signal_casted = tf.cast(signal, tf.float32)
-    all_signals.append(signal_casted)
-    
-aaaaaa_test = [tf.cast(np.expand_dims(x_replaced[0][i],axis=0),tf.float32) for i in range(0,6)]
+print(f'Subject: {subject} k: {k} window_length: {window_length}--> AOPC_SBP: {AOPC_SBP[0][0]}, AOPC_DBP: {AOPC_DBP[0][1]}')
 
-subplot_all_IG_attributions(x_replaced[0])
-subplot_all_IG_attributions(x_replaced[19])
+#%%Test Section
+#IG_summed = sum_IG(IG_zero_SBP[0])
+#vs.plot_signal_heatmap(PPG[0], IG_zero_SBP[0], signal_nr=0)
+subject_nr = 28
+IG_SBP_normalized = normalize_IG(IG_zero_SBP[subject_nr], method='zero_mean')
+IG_SBP_normalized = np.expand_dims(IG_SBP_normalized, axis=1)
+#vs.subplot_all_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr=subject_nr, colorbar='midpoint_norm')
+#vs.subplot_all_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr=subject_nr, colorbar='single')
+#vs.subplot_all_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr=subject_nr, colorbar='multi')
+vs.subplot_all_signals_bwr_heatmap(IG_SBP_normalized, all_input_signals, subject_nr=subject_nr, colorbar ='single')
 
-#plt.figure()
-#plt.plot(np.array(all_AOPC_DBP), diff_test_DBP, 'o', color='black')
+vs.subplot_3_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr, colorbar = 'single', mode='PPG')
+
+#vs.AOPC_curve_plot(temp_pred[subject][0], all_f_x_k_SBP, mode='SBP')
+
+signal_nr = 0
+subject = 28
+#vs.plot_onesignal_bwr_heatmap(IG_zero_SBP[subject], PPG[subject], signal_nr)
+
+
 
 ##########################################################Breite##########
 ###############################################################################
