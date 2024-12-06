@@ -222,8 +222,9 @@ def calculate_APT(x, IG, alpha, pattern, window_length, replacement_strategy, mo
                 k = k+1
     elif mode == 'ABP':
         pass
-    
+    #because k starts at zero
     k = k+1
+    #calculate APT
     APT = k/J
     
     return APT, k

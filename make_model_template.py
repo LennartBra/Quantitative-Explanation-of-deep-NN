@@ -144,4 +144,21 @@ def make_model_pressure():
                                 name='Template_Model_Pressure')
     
     return model
+
+def make_model_pressure_onesignal():
+    #Define Inputs
+    inp_time0 = Input(shape=(1000, 1), name="input_time0")
+    
+    #Inputs going through feature blocks
+    signal0 = signal_block(inp_time0, [32, 64]) #Feature Block ABP0
+    
+    #Subnet Block
+    final_outp = subnet_x(signal0)
+    
+    #Define complete model
+    model = keras.Model(inputs=[inp_time0],
+                                outputs=final_outp,
+                                name='Template_Model_Pressure_onesignal')
+    
+    return model
     

@@ -28,6 +28,31 @@ import visualization as vs
 
 keras.backend.clear_session()
 
+'''
+#Tensorflow settings - use CPU or GPU
+#GPU settings 1
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+  try:
+    for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
+  except RuntimeError as e:
+    print(e)
+#os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+
+#CPU settings 
+#tf.device('/cpu:0')
+
+#GPU settings 2
+from tensorflow.compat.v1 import ConfigProto
+from tensorflow.compat.v1 import InteractiveSession
+config = ConfigProto()
+config.gpu_options.per_process_gpu_memory_fraction = 0.2
+config.gpu_options.allow_growth = True
+session = InteractiveSession(config=config)
+'''
+
+
 if tf.test.gpu_device_name():
     print("Default GPU Device: {}".format(tf.test.gpu_device_name()))
 else:
@@ -62,6 +87,7 @@ kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
 kfold.get_n_splits(files)
 
 batch_size = 2048
+    
 
 if __name__=="__main__":
     print("Train TemplateNet with PulseDB")
@@ -70,7 +96,8 @@ if __name__=="__main__":
         if nr_fold in [1,2]:continue
 
         # Separate training, validation and test ids
-        train_index, val_index = train_test_split(train_index, test_size=0.1)
+        train_index, val_index = train_test_split(train_index, test_size=0.1, random_state=42)
+        
         train_id = [files[x] for x in train_index]
         val_id = [files[x] for x in val_index]
         test_id = [files[x] for x in test_index]
@@ -83,8 +110,21 @@ if __name__=="__main__":
         generator_train = DataGenerator(path_main, train_id, batch_size=batch_size)
         generator_val = DataGenerator(path_main, val_id, batch_size=batch_size)
         generator_test = DataGenerator(path_main, test_id, batch_size=batch_size, shuffle=False)
-
         
+        '''
+        #Get Distribution of data --> train, val and test
+        len_train = generator_train.__len__() * batch_size
+        len_val = generator_val.__len__() * batch_size
+        len_test = generator_test.__len__() * batch_size
+        
+        total = len_train + len_val + len_test
+        percent_train = len_train / total
+        percent_val = len_val / total
+        percent_test = len_test / total
+        
+        print(f'nr_fold:{nr_fold}, percent_train:{percent_train},percent_val:{percent_val},percent_test:{percent_test}')
+        '''
+ 
         #Load model with weights
         model = keras.models.load_model('C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/best_model_template0.h5', compile=False)
         
@@ -104,7 +144,7 @@ if __name__=="__main__":
                         verbose=1,
                         callbacks=[es, mcp, reduce_lr])
         '''
-        # Make prediction
+        # Make prediction on test data
         nr_data = generator_test.__len__()  #nr_data equals number of batches
         all_mae = np.zeros((nr_data,2))
 
@@ -172,8 +212,17 @@ TemplatePPG2 = batch_data[5]
 all_input_signals = []
 for i in range(0,6):
     all_input_signals.append(batch_data[i])
+        
     
-
+    
+#%%
+Zero_Baseline = np.zeros((6,1000))
+Zero_Baseline_Tensor = []
+#Iterate over all 6 input signals for the baseline
+for i in range(0,len(Zero_Baseline)):
+    one_signal = Zero_Baseline[i]
+    one_signal = np.expand_dims(one_signal, axis=0)
+    Zero_Baseline_Tensor.append(tf.cast(one_signal, tf.float32))
 
 #%% Integrated Gradients Algorithm Implementation
 def make_input_tensors(batch, batch_size):
@@ -278,7 +327,7 @@ def get_integrated_gradients(segment, baseline=None, num_steps=50):
     '''
     shape = np.shape(segment)
     n_input_signals = shape[0]
-    print(f'inputsignals={n_input_signals}')
+    #print(f'inputsignals={n_input_signals}')
     #n_input_signals = 6
     
     if baseline == None:
@@ -341,7 +390,7 @@ def get_integrated_gradients(segment, baseline=None, num_steps=50):
         
     return integrated_grads_SBP, integrated_grads_DBP
 
-#%%
+
 def normalize_IG(IG, method):
     IG_matrix = np.squeeze(IG.copy())
     matrix_shape = np.shape(IG_matrix)
@@ -374,7 +423,7 @@ def sum_IG(IG):
     return IG_summed
     
 
-IG_SBP_normalized = normalize_IG(IG_zero_SBP[0], method='zero_mean')
+#IG_SBP_normalized = normalize_IG(IG_zero_SBP[0], method='zero_mean')
 
 #%%
 #Make Input Data Tensors --> correct format for Integrated Gradients Algorithm
@@ -382,22 +431,22 @@ IG_SBP_normalized = normalize_IG(IG_zero_SBP[0], method='zero_mean')
 all_instances = make_input_tensors(batch_data, batch_size)
 #Calculate one example
 grads_SBP, grads_DBP = get_gradients(all_instances[1])
-IG_SBP, IG_DBP = get_integrated_gradients(all_instances[1], baseline=None, num_steps=25)
+IG_SBP, IG_DBP = get_integrated_gradients(all_instances[1], baseline=None, num_steps=50)
 
 
 #%% Calculate 100 examples with zero baseline
 
 IG_SBP_examples_zero = []
 IG_DBP_examples_zero = []
-for i in range(0,3):
+for i in range(100,300):
     print(f"Example No.{i+1} - Zero Baseline")
     #grads_SBP, grads_DBP = get_gradients(all_instances[i])
     IG_SBP, IG_DBP = get_integrated_gradients(all_instances[i], baseline=None, num_steps=50)
     IG_SBP_examples_zero.append(IG_SBP)
     IG_DBP_examples_zero.append(IG_DBP)
 
-#np.save(target_path+'IG/IG_zero_SBP', IG_SBP_examples_zero)
-#np.save(target_path+'IG/IG_zero_DBP', IG_DBP_examples_zero)
+#np.save(target_path+'IG/IG_zero_SBP_100_300', IG_SBP_examples_zero)
+#np.save(target_path+'IG/IG_zero_DBP_100_300', IG_DBP_examples_zero)
 
 #%% Calculate 100 examples with Random baseline
 IG_SBP_examples_random = []
@@ -414,9 +463,16 @@ for i in range(0,3):
 
 
 #%%Load calculated IG examples
-#50 Interpolation steps - Zero Baseline - 100 segments
-IG_zero_SBP = np.load(target_path+'IG/IG_zero_SBP.npy')
-IG_zero_DBP = np.load(target_path+'IG/IG_zero_DBP.npy')
+#50 Interpolation steps - Zero Baseline - Segments 0-100
+IG_zero_SBP_100 = np.load(target_path+'IG/IG_zero_SBP.npy')
+IG_zero_DBP_100 = np.load(target_path+'IG/IG_zero_DBP.npy')
+#50 Interpolation steps - Zero Baseline - Segments 100-300
+IG_zero_SBP_300 = np.load(target_path+'IG/IG_zero_SBP_100_300.npy')
+IG_zero_DBP_300 = np.load(target_path+'IG/IG_zero_DBP_100_300.npy')
+#Concatenate arrays
+IG_zero_SBP = np.concatenate((IG_zero_SBP_100, IG_zero_SBP_300), axis=0)
+IG_zero_DBP = np.concatenate((IG_zero_DBP_100, IG_zero_DBP_300), axis=0)
+
 #50 Interpolation steps - Random Baseline - 100 segments
 IG_random_SBP = np.load(target_path+'IG/IG_random_SBP.npy')
 IG_random_DBP = np.load(target_path+'IG/IG_random_DBP.npy')
@@ -425,97 +481,11 @@ IG_zero_SBP_25steps = np.load(target_path+'IG/IG_zero_SBP_new.npy')
 IG_zero_DBP_25steps = np.load(target_path+'IG/IG_zero_DBP_new.npy')
 
 #%% Subplot all input signals
-vs.subplot_all_input_signals(batch_data, 22)
+vs.subplot_all_input_signals(batch_data, 22, n_input_signals=6)
+subject_nr = 12
+vs.plot_PPG_heatmap_scatter_subplot(PPG[subject_nr], PPG1[subject_nr], PPG2[subject_nr], IG_zero_SBP[subject_nr])
 
-#%% Visualize some zero baseline examples for SBP 
-#Beispielsegment 1 SBP PPG0 --> Instanz 80
-#Beispielsegment 2 SBP PPG0 --> Instanz 81
-#Beispielsegment 1 SBP PPG1 --> Instanz 80
-#Beispielsegment 2 SBP PPG1 --> Instanz 81
-#Beispielsegment 1 SBP PPG2 --> Instanz 80
-#Beispielsegment 2 SBP PPG2 --> Instanz 81
-#Define segment_nr and signal_nr and create plots
-segment_nr = 81
-signal_nr = 0
-
-#Plot all IG attributions for one segment
-vs.subplot_all_IG_attributions(IG_zero_SBP[segment_nr])
-#Plot Signal with IG in one plot
-#plot_signal_with_IG(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
-#Plot Signal with attributions as heatmap
-vs.plot_signal_heatmap(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
-#Subplot Signal with attributions as heatmap and plot IG as signal
-#subplot_heatmap_and_IG(PPG[segment_nr], IG_zero_SBP[segment_nr], signal_nr)
-#Plot PPG0,PPG1,PPG2 with attributions as heatmap in one subplot
-vs.plot_PPG_heatmap_scatter_subplot(PPG[segment_nr], PPG1[segment_nr], PPG2[segment_nr], IG_zero_SBP[segment_nr])
-#Plot all Attributions for the template signals
-#plot_templates_heatmap_scatter_subplot(TemplatePPG[segment_nr], TemplatePPG1[segment_nr], TemplatePPG2[segment_nr], IG_zero_SBP[segment_nr])
-#Plot many Templates in one
-#subplot_many_templates_in_one(IG_zero_SBP)
-
-#%% Visualize some zero baseline examples for DBP
-#Beispielsegment 1 DBP PPG0 --> Instanz 44
-#Beispielsegment 2 DBP PPG0 --> Instanz 54
-#Beispielsegment 1 DBP PPG1 --> Instanz 44
-#Beispielsegment 2 DBP PPG1 --> Instanz 54
-#Beispielsegment 1 DBP PPG2 --> Instanz 44
-#Beispielsegment 2 DBP PPG2 --> Instanz 54
-#Define segment_nr and signal_nr and create plots
-segment_nr = 44
-signal_nr = 2
-
-#Plot all IG attributions for one segment
-vs.subplot_all_IG_attributions(IG_zero_DBP[segment_nr])
-#Plot Signal with IG in one plot
-#plot_signal_with_IG(PPG2[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
-#Plot Signal with attributions as heatmap
-vs.plot_signal_heatmap(PPG2[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
-#Subplot Signal with attributions as heatmap and plot IG as signal
-#subplot_heatmap_and_IG(PPG[segment_nr], IG_zero_DBP[segment_nr], signal_nr)
-#Plot PPG0,PPG1,PPG2 with attributions as heatmap in one subplot
-vs.plot_PPG_heatmap_scatter_subplot(PPG[segment_nr], PPG1[segment_nr], PPG2[segment_nr], IG_zero_DBP[segment_nr])
-#Plot all Attributions for the template signals
-#plot_templates_heatmap_scatter_subplot(TemplatePPG[segment_nr], TemplatePPG1[segment_nr], TemplatePPG2[segment_nr], IG_zero_DBP[segment_nr])
-
-#Plot many Templates in one
-#subplot_many_templates_in_one(IG_zero_DBP)
-
-#%% Einfluss der Interpolationsschritte
-segment_nr = 90
-#Calculate Attributions with different num_steps
-IG_25steps_SBP, IG_25steps_DBP = get_integrated_gradients(all_instances[segment_nr], baseline=None, num_steps=25)
-IG_75steps_SBP, IG_75steps_DBP = get_integrated_gradients(all_instances[segment_nr], baseline=None, num_steps=75)
-IG_175steps_SBP, IG_175steps_DBP = get_integrated_gradients(all_instances[segment_nr], baseline=None, num_steps=175)
-
-#Plot all IG attributions with different step sizes for SBP
-vs.plot_IG_for_interpolation_steps(IG_25steps_SBP, IG_75steps_SBP, IG_175steps_SBP)
-#Plot all IG attributions with different step sizes for SBP
-vs.plot_IG_for_interpolation_steps(IG_25steps_DBP, IG_75steps_DBP, IG_175steps_DBP)
-
-
-#%% Einfluss der Baseline
-Instanz_E1 = 80
-#Calculate Attributions with different num_steps
-IG_zero_SBP_E1, IG_zero_DBP_E1 = get_integrated_gradients(all_instances[Instanz_E1], baseline=None, num_steps=50)
-IG_random_SBP_E1, IG_random_DBP_E1 = get_integrated_gradients(all_instances[Instanz_E1], baseline='Random_Signal', num_steps=50)
-Instanz_E2 = 54
-IG_zero_SBP_E2, IG_zero_DBP_E2 = get_integrated_gradients(all_instances[Instanz_E2], baseline=None, num_steps=50)
-IG_random_SBP_E2, IG_random_DBP_E2 = get_integrated_gradients(all_instances[Instanz_E2], baseline='Random_Signal', num_steps=50)
-
-
-#Subplot PPG Attributions for PPG0,PPG1 and PPG2 for Uniform and Zero Baseline for SBP Example
-vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_random_SBP_E1)
-vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_zero_SBP[Instanz_E1])
-#Plot Templatesignal attributions
-vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_random_SBP_E1,)
-vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_zero_SBP[Instanz_E1],)
-
-#Subplot PPG Attributions for PPG0,PPG1 and PPG2 for Uniform and Zero Baseline for DBP Example
-vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_random_SBP_E1)
-vs.plot_PPG_heatmap_scatter_subplot(PPG[Instanz_E1], PPG1[Instanz_E1], PPG2[Instanz_E1], IG_zero_SBP[Instanz_E1])
-#Plot Templatesignal attributions
-vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_random_SBP_E1,)
-vs.plot_templates_heatmap_scatter_subplot(TemplatePPG[Instanz_E1], TemplatePPG1[Instanz_E1], TemplatePPG2[Instanz_E1],IG_zero_SBP[Instanz_E1],)
+vs.subplot_3_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr, colorbar = 'single', mode='PPG')
 
 
 #%% Visualize general results of TemplateNet
@@ -548,42 +518,47 @@ plt.ylabel('Counts')
 plt.grid()
 
 
-#%%Visualisierungen für die Powerpoint
-#PPG
-Instanz1 = 80
-Instanz2= 44
-Instanz3= 81
-#Plot 3 PPG and their integrated gradients
-vs.plot_3PPG_heatmap_scatter_subplot(PPG[Instanz1], PPG[Instanz2], PPG[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],1)
 
-#Erste Ableitung
-vs.plot_3PPG_heatmap_scatter_subplot(PPG1[Instanz1], PPG1[Instanz2], PPG1[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],2)
+#%% Calculate Integrated Gradients for certain number of batches
+#Define number of batches to calculate IG for
+nr_batches = 10
+all_IG_SBP = []
+all_IG_DBP = []
 
-#Zweite Ableitung
-vs.plot_3PPG_heatmap_scatter_subplot(PPG2[Instanz1], PPG2[Instanz2], PPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],3)
-
-#PPG Template
-vs.plot_3PPG_heatmap_scatter_subplot(TemplatePPG[Instanz1], TemplatePPG[Instanz2], TemplatePPG[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],4)
-
-#Erste Ableitung Template
-vs.plot_3PPG_heatmap_scatter_subplot(TemplatePPG1[Instanz1], TemplatePPG1[Instanz2], TemplatePPG1[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],5)
-
-#Zweite Ableitung Template
-vs.plot_3PPG_heatmap_scatter_subplot(TemplatePPG2[Instanz1], TemplatePPG2[Instanz2], TemplatePPG2[Instanz3], IG_zero_SBP[Instanz1], IG_zero_DBP[Instanz2], IG_zero_SBP[Instanz3],6)
-
-
-#%% Calculate AOPC for all 100 IG examples
+for batch_index in range(0,nr_batches):
+    batch_data, temp_true = generator_test.__getitem__(batch_index)
+    all_instances = make_input_tensors(batch_data, batch_size)
+    
+    for i in range(0,len(all_instances)):
+        print(f"Example No.{i+1} - Zero Baseline")
+        #grads_SBP, grads_DBP = get_gradients(all_instances[i])
+        IG_SBP, IG_DBP = get_integrated_gradients(all_instances[i], baseline=None, num_steps=50)
+        all_IG_SBP.append(IG_SBP)
+        all_IG_DBP.append(IG_DBP)
+        
+#%% Calculate AOPC and APT for all IG examples
 all_AOPC_SBP = []
 all_AOPC_DBP = []
-for i in range(0,len(IG_zero_SBP)):
-    print(i)
-    AOPC_SBP, all_f_x_k_SBP = metrics.calculate_AOPC(all_instances[i], IG_zero_SBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
-    AOPC_DBP, all_f_x_k_DBP = metrics.calculate_AOPC(all_instances[i], IG_zero_DBP[i], k=15, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+all_APT_SBP = []
+all_APT_DBP = []
+all_k_SBP = []
+all_k_SBP = []
+
+for i in range(100,150):
+    print(f'Segment: {i}')
+    AOPC_SBP, all_f_x_k_SBP = metrics.calculate_AOPC(all_instances[i], IG_zero_SBP[i], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
+    AOPC_DBP, all_f_x_k_DBP = metrics.calculate_AOPC(all_instances[i], IG_zero_DBP[i], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
     all_AOPC_SBP.append(AOPC_SBP[0][0])
     all_AOPC_DBP.append(AOPC_DBP[0][1])
+    APT_SBP, k_SBP = metrics.calculate_APT(all_instances[i], IG_zero_SBP[i], alpha=0.05, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model, mode='SBP')
+    APT_DBP, k_DBP = metrics.calculate_APT(all_instances[i], IG_zero_DBP[i], alpha=0.05, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model, mode='DBP')
+    all_APT_SBP.append(APT_SBP)
+    all_APT_DBP.append(APT_DBP)
     
 AOPC_SBP_mean = np.mean(all_AOPC_SBP)
 AOPC_DBP_mean = np.mean(all_AOPC_DBP)
+APT_SBP_mean = np.mean(all_APT_SBP)
+APT_DBP_mean = np.mean(all_APT_DBP)
     
 #%% AOPC Metric
 def rank_attributions(IG, pattern, window_length):
@@ -816,14 +791,14 @@ print(f'APT: {APT*100}%, k: {k}')
 subject = 50
 k = 10
 window_length = 5
-AOPC_SBP, all_f_x_k_SBP = calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=k, pattern='morf', window_length=window_length, replacement_strategy='global_mean', model=model)
+AOPC_SBP, all_f_x_k_SBP = metrics.calculate_AOPC(all_instances[subject], IG_zero_SBP[subject], k=k, pattern='morf', window_length=window_length, replacement_strategy='global_mean', model=model)
 AOPC_DBP, all_f_x_k_DBP = metrics.calculate_AOPC(all_instances[subject], IG_zero_DBP[subject], k=10, pattern='morf', window_length=10, replacement_strategy='global_mean', model=model)
 print(f'Subject: {subject} k: {k} window_length: {window_length}--> AOPC_SBP: {AOPC_SBP[0][0]}, AOPC_DBP: {AOPC_DBP[0][1]}')
 
 #%%Test Section
 #IG_summed = sum_IG(IG_zero_SBP[0])
 #vs.plot_signal_heatmap(PPG[0], IG_zero_SBP[0], signal_nr=0)
-subject_nr = 28
+subject_nr = 151
 IG_SBP_normalized = normalize_IG(IG_zero_SBP[subject_nr], method='zero_mean')
 IG_SBP_normalized = np.expand_dims(IG_SBP_normalized, axis=1)
 #vs.subplot_all_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr=subject_nr, colorbar='midpoint_norm')

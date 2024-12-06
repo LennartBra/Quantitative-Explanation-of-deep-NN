@@ -30,7 +30,7 @@ def subplot_all_input_signals(batch_data, segment_nr, n_input_signals):
     
     instance = get_instance(batch_data,segment_nr, n_input_signals)
     
-    fig, axs = plt.subplots(6, sharex=True)
+    fig, axs = plt.subplots(n_input_signals, sharex=True)
     fig.suptitle('All Input Signals')
     fig.supxlabel('Samples')
     fig.supylabel('Amplitude')
