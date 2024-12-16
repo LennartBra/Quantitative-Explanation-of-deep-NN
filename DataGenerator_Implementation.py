@@ -70,6 +70,7 @@ class DataGenerator(Sequence):
         #Generate data
         x, y = self.__data_generation(list_IDs_temp)
         
+            
         if self.typ == 'PPG':
             X = [x[0], x[1], x[2], x[3], x[4], x[5]]
         elif self.typ == 'ABP_multi':

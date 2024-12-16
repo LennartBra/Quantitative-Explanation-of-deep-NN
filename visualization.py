@@ -488,16 +488,32 @@ def subplot_all_signals_bwr_heatmap(IG, signals, subject_nr, colorbar):
             c = axs[i].imshow(IG_signal, aspect='auto', cmap='bwr', extent=(xmin, xmax, ymin, ymax), norm=colors.CenteredNorm(vcenter=0))
             fig.colorbar(c)
     
-def subplot_3_signals_bwr_heatmap(IG, signals, subject_nr, colorbar, mode):
+def subplot_3_signals_bwr_heatmap(IG, segment, colorbar, mode):
     IG_shape = np.shape(IG)
     t = range(0,IG_shape[2])
     
+    subplot_nr = 3
     if mode == 'PPG':
-        low_lim = 0
-        up_lim = 3
+        signals = np.zeros((3,1000))
+        signals[0][:] = segment[0]
+        signals[1][:] = segment[1]
+        signals[2][:] = segment[2]
     elif mode == 'TPPG':
-        low_lim = 3
-        up_lim = 6
+        signals = np.zeros((3,1000))
+        signals[0][:] = segment[6]
+        signals[1][:] = segment[7]
+        signals[2][:] = segment[8]
+        
+        IG = IG.copy()
+        IG[0][0][:] = IG[3][0][:]
+        IG[1][0][:] = IG[4][0][:]
+        IG[2][0][:] = IG[5][0][:]
+        
+    elif mode == 'ABP_multi':
+        signals = np.zeros((3,1000))
+        signals[0][:] = segment[3]
+        signals[1][:] = segment[4]
+        signals[2][:] = segment[5]
     
     fig, axs = plt.subplots(3, sharex=True)
     fig.suptitle('Attributions for all Input signals visualized as heatmap')
@@ -508,15 +524,16 @@ def subplot_3_signals_bwr_heatmap(IG, signals, subject_nr, colorbar, mode):
         xmin = min(t)
         xmax = max(t)
         #Use multiple colorbars
-        for i in range(0,IG_shape[0]):
+        for i in range(0,subplot_nr):
             IG_signal = IG[i][0][:]
             IG_signal = np.expand_dims(IG_signal, axis=0)
-        for i in range(low_lim,up_lim):
-            ymin = min(signals[i][subject_nr][:])
-            ymax = max(signals[i][subject_nr][:])
-            axs[i].plot(t, signals[i][subject_nr][:], c='k', linewidth=2)
-            c = axs[i].imshow(IG_signal, aspect='auto', cmap='bwr', extent=(xmin, xmax, ymin, ymax))
+        #for i in range(low_lim,up_lim):
+            ymin = min(signals[i][:])
+            ymax = max(signals[i][:])
+            axs[i].plot(t, signals[i][:], c='k', linewidth=2)
+            c = axs[i].imshow(IG_signal, aspect='auto', cmap='bwr', extent=(xmin, xmax, ymin, ymax),norm=colors.CenteredNorm(vcenter=0))
             fig.colorbar(c)
+            
     elif colorbar == 'single':
         xmin = min(t)
         xmax = max(t)
@@ -529,12 +546,12 @@ def subplot_3_signals_bwr_heatmap(IG, signals, subject_nr, colorbar, mode):
         IG_min = -np.abs(maximum_value)
         IG_max = np.abs(maximum_value)
         #Use one colorbar
-        for i in range(low_lim,up_lim):
+        for i in range(0,subplot_nr):
             IG_signal = IG[i][0][:]
             IG_signal = np.expand_dims(IG_signal, axis=0)
-            ymin = min(signals[i][subject_nr][:])
-            ymax = max(signals[i][subject_nr][:])
-            axs[i].plot(t, signals[i][subject_nr][:], c='k', linewidth=2)
+            ymin = min(signals[i][:])
+            ymax = max(signals[i][:])
+            axs[i].plot(t, signals[i][:], c='k', linewidth=2)
             c = axs[i].imshow(IG_signal, aspect='auto', cmap='bwr', extent=(xmin, xmax, ymin, ymax), vmin=IG_min, vmax=IG_max)
         #fig.colorbar(c)
         fig.subplots_adjust(right=0.8)
@@ -545,11 +562,11 @@ def subplot_3_signals_bwr_heatmap(IG, signals, subject_nr, colorbar, mode):
         xmin = min(t)
         xmax = max(t)
         #Use one colorbar
-        for i in range(low_lim,up_lim):
+        for i in range(0,subplot_nr):
             IG_signal = IG[i][0][:]
             IG_signal = np.expand_dims(IG_signal, axis=0)
-            ymin = min(signals[i][subject_nr][:])
-            ymax = max(signals[i][subject_nr][:])
-            axs[i].plot(t, signals[i][subject_nr][:], c='k', linewidth=2)
+            ymin = min(signals[i][:])
+            ymax = max(signals[i][:])
+            axs[i].plot(t, signals[i][:], c='k', linewidth=2)
             c = axs[i].imshow(IG_signal, aspect='auto', cmap='bwr', extent=(xmin, xmax, ymin, ymax), norm=colors.CenteredNorm(vcenter=0))
             fig.colorbar(c)

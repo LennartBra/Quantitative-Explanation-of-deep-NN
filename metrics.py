@@ -109,20 +109,27 @@ def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model
     IG_sum_atts, IG_ranks = rank_attributions(IG, pattern, window_length)
     #Replace k features depending on the hyperparameters
     x_replaced = replace_k_features(x, IG_ranks, k, window_length, replacement_strategy)
+    #Define nr_signals via IG Shape
+    IG_shape = np.shape(IG)
+    n_signals = IG_shape[0]
     #Calculate AOPC with formula
     f_x = model.predict(x, verbose=0)
     summe = 0
-    all_f_x_k = []
+    all_diffs = []
     for i in range(0,k):
         #Make tf Tensor from numpy array
-        x_k = [tf.cast(np.expand_dims(x_replaced[i][j],axis=0), tf.float32) for j in range(0,6)]
+        x_k = [tf.cast(np.expand_dims(x_replaced[i][j],axis=0), tf.float32) for j in range(0,n_signals)]
         f_x_k = model.predict(x_k, verbose=0)
         diff = f_x - f_x_k
         summe = summe + diff
-        all_f_x_k.append(f_x_k)
-    AOPC = 1/k * summe
+        
+        #all_f_x_k.append(f_x_k)
+        all_diffs.append(diff)
+        
+    #AOPC = summe        #NEUE Berechnung
+    AOPC = 1/k * summe   #ALTE Berechnung
     
-    return AOPC, all_f_x_k
+    return AOPC, all_diffs
 
 
 

@@ -84,7 +84,7 @@ def concat_block(x1, x2):
 
     return outp
 
-def make_model():
+def make_model_PPG():
     inp_time0 = Input(shape=(1000, 1), name="input_time0")
     inp_template0 = Input(shape=(1000, 1), name="input_template0")
     inp_time1 = Input(shape=(1000, 1), name="input_time1")
@@ -119,7 +119,7 @@ def make_model():
 
     return model
 
-def make_model_pressure():
+def make_model_pressure_multi():
     #Define Inputs
     inp_time0 = Input(shape=(1000, 1), name="input_time0")
     inp_time1 = Input(shape=(1000, 1), name="input_time1")
@@ -145,7 +145,7 @@ def make_model_pressure():
     
     return model
 
-def make_model_pressure_onesignal():
+def make_model_pressure_uni():
     #Define Inputs
     inp_time0 = Input(shape=(1000, 1), name="input_time0")
     

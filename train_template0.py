@@ -11,8 +11,8 @@ import numpy as np
 import os
 #os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
 
-from DataGenerator_template import DataGenerator, DataGenerator_Pressure
-from make_model_template import make_model, make_model_pressure
+from DataGenerator_Implementation import DataGenerator
+from make_model_template import make_model_PPG 
 
 import tensorflow as tf
 from sklearn.metrics import mean_absolute_error
@@ -25,6 +25,7 @@ from tensorflow import keras
 import matplotlib.pyplot as plt
 import metrics as metrics
 import visualization as vs
+import XAI_Method as XAI
 
 keras.backend.clear_session()
 
@@ -58,150 +59,147 @@ if tf.test.gpu_device_name():
 else:
     print("Please install GPU version of TF")
 
-target_path = "C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/"
 #Make Matlab like plots
 #%matplotlib qt
 
-#%% Main code for training and testing neural network with PPG
-#---------------------------------------------------------------------------------------------------------------------
-# Initialize paths
-#---------------------------------------------------------------------------------------------------------------------
+#Load train_id, test_id, val_id and quant_id
+train_id = np.load("C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/train_id.npy")
+val_id = np.load("C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/val_id.npy")
+test_id = np.load("C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/test_id.npy")
+quant_id = np.load("C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/quant_id.npy")
 
 # Main path of final preprocessed data
-#path_main = "PulseDB/pulsedb0/"
-path_main = "C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/"
+path_main = "C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/"
 # IDs
-files = os.listdir(path_main+"dev0/")
-### Necessary for using subset ###
-#files = files[:10]
-##################################
+files = os.listdir(path_main)
+#Define batch size
+batch_size = 64
 
-#---------------------------------------------------------------------------------------------------------------------
-# Initiliaze trainingsparameter
-#---------------------------------------------------------------------------------------------------------------------
-# loo = LeaveOneOut()
-# loo.get_n_splits(files)
+#Make model
+#model = make_model_PPG()
+#Load model with weights
+model = keras.models.load_model('C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/best_model_template0.h5', compile=False)
+#%% Train Neural Network
+print("Train TemplateNet with PulseDB")
+# Load Data Generators
+print("Loading Datagenerator")
+generator_train = DataGenerator(path_main, train_id, batch_size=batch_size, typ='PPG')
+generator_val = DataGenerator(path_main, val_id, batch_size=batch_size, typ='PPG')
+generator_test = DataGenerator(path_main, test_id, batch_size=batch_size, typ='PPG')
 
-n_splits = 3
-kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-kfold.get_n_splits(files)
+# Make training
+optimizer = optimizers.Adam(learning_rate=0.0001)
 
-batch_size = 2048
+es = EarlyStopping(monitor="mae", patience=10)
+mcp = ModelCheckpoint('best_model_template.h5', monitor='val_mae', save_best_only=True)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8)
+model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
+
+model.fit(generator_train,
+                validation_data=generator_val,
+                epochs=1,
+                verbose=1,
+                callbacks=[es, mcp, reduce_lr])
+
+
+#%% Make prediction
+print('Prediction on test data')
+#Define variables
+all_mae_sbp, all_mae_dbp, subject_result, all_pred, all_r_sbp, all_r_dbp = [], [], [], [], [], []
+
+nr_data = generator_test.__len__()  #nr_data equals number of batches
+all_mae = np.zeros((nr_data,2))
+
+
+for batch_index in range(0,nr_data): #Verwendung von Batch 9 aus Testdaten für die Projetkarbeit
+    print(batch_index) 
+    batch_data, temp_true = generator_test.__getitem__(batch_index)
     
-
-if __name__=="__main__":
-    print("Train TemplateNet with PulseDB")
-    all_mae_sbp, all_mae_dbp, subject_result, all_pred, all_r_sbp, all_r_dbp = [], [], [], [], [], []
-    for nr_fold, (train_index, test_index) in enumerate(kfold.split(files)):
-        if nr_fold in [1,2]:continue
-
-        # Separate training, validation and test ids
-        train_index, val_index = train_test_split(train_index, test_size=0.1, random_state=42)
-        
-        train_id = [files[x] for x in train_index]
-        val_id = [files[x] for x in val_index]
-        test_id = [files[x] for x in test_index]
-        
-        #train_id = train_id[0:5]
-        #val_id = val_id[0:1]
-        
-        # Generators
-        print("Loading Datagenerator")
-        generator_train = DataGenerator(path_main, train_id, batch_size=batch_size)
-        generator_val = DataGenerator(path_main, val_id, batch_size=batch_size)
-        generator_test = DataGenerator(path_main, test_id, batch_size=batch_size, shuffle=False)
-        
-        '''
-        #Get Distribution of data --> train, val and test
-        len_train = generator_train.__len__() * batch_size
-        len_val = generator_val.__len__() * batch_size
-        len_test = generator_test.__len__() * batch_size
-        
-        total = len_train + len_val + len_test
-        percent_train = len_train / total
-        percent_val = len_val / total
-        percent_test = len_test / total
-        
-        print(f'nr_fold:{nr_fold}, percent_train:{percent_train},percent_val:{percent_val},percent_test:{percent_test}')
-        '''
- 
-        #Load model with weights
-        model = keras.models.load_model('C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/best_model_template0.h5', compile=False)
-        
-        '''
-        # Training Code
-        # Make training
-        optimizer = optimizers.Adam(learning_rate=0.0001)
-
-        es = EarlyStopping(monitor="mae", patience=10)
-        mcp = ModelCheckpoint('best_model_template'+str(nr_fold)+'.h5', monitor='val_mae', save_best_only=True)
-        reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8)
-        model.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
-
-        model.fit(generator_train,
-                        validation_data=generator_val,
-                        epochs=3,
-                        verbose=1,
-                        callbacks=[es, mcp, reduce_lr])
-        '''
-        # Make prediction on test data
-        nr_data = generator_test.__len__()  #nr_data equals number of batches
-        all_mae = np.zeros((nr_data,2))
-
-
-        print('Prediction')
-        #for batch_index in range(0,nr_data):
-        for batch_index in range(0,10): #Verwendung von Batch 9 aus Testdaten für die Projetkarbeit
-            print(batch_index) 
-            batch_data, temp_true = generator_test.__getitem__(batch_index)
-            
-
-            temp_pred = model.predict(batch_data, verbose=0, batch_size=batch_size)
-            if batch_index==0:
-                data_pred = temp_pred
-                data_true = temp_true
-                #continue        #reinschreiben für korrelationskoeffizient --> bessere Berechnung
-
-            if batch_index==nr_data-1:
-                for i in range(len(temp_pred)):
-                    if temp_pred[i,0]==0:
-                        temp_pred = temp_pred[i-1] 
-                        temp_true = temp_true[i-1]
-                        
-            data_pred = np.concatenate((data_pred, temp_pred), axis=0)
-            data_true = np.concatenate((data_true, temp_true), axis=0)
-        
-            mae_sbp_batch = mean_absolute_error(temp_pred[...,0], temp_true[:,0])
-            mae_dbp_batch = mean_absolute_error(temp_pred[...,1], temp_true[:,1])
-
-            all_mae[batch_index] = np.array([mae_sbp_batch, mae_dbp_batch])
-        r_sbp, _ = pearsonr(data_pred[:,0], data_true[:,0]) 
-        r_dbp, _ = pearsonr(data_pred[:,1], data_true[:,1]) 
-        
-        mae_sbp = np.mean(all_mae[:,0])
-        mae_dbp = np.mean(all_mae[:,1])
-        all_pred.append(np.array(data_pred))
-        
-        print(mae_sbp)
-        print(mae_dbp)
-        print(r_sbp, r_dbp)
-
-        all_mae_sbp.append(mae_sbp)
-        all_mae_dbp.append(mae_dbp)
-        all_r_sbp.append(r_sbp)
-        all_r_dbp.append(r_dbp)
-        
-    mae_sbp_mean = np.mean(all_mae_sbp)
-    mae_dbp_mean = np.mean(all_mae_dbp)
-    r_mean_sbp = np.mean(all_r_sbp)
-    r_mean_dbp = np.mean(all_r_dbp)
+    temp_pred = model.predict(batch_data, verbose=0, batch_size=batch_size)
     
-    print("Mean of SBP: ", mae_sbp_mean)
-    print("Mean of DBP: ", mae_dbp_mean)
-    print("Mean of r: ", r_mean_sbp, r_mean_dbp)
+    if batch_index==0:
+        data_pred = temp_pred
+        data_true = temp_true
+        #continue        #reinschreiben für korrelationskoeffizient --> bessere Berechnung
+    else:
+        data_pred = np.concatenate((data_pred, temp_pred), axis=0)
+        data_true = np.concatenate((data_true, temp_true), axis=0)
+        
+
+                
+
+    mae_sbp_batch = mean_absolute_error(temp_pred[...,0], temp_true[:,0])
+    mae_dbp_batch = mean_absolute_error(temp_pred[...,1], temp_true[:,1])
+
+    all_mae[batch_index] = np.array([mae_sbp_batch, mae_dbp_batch])
+r_sbp, _ = pearsonr(data_pred[:,0], data_true[:,0]) 
+r_dbp, _ = pearsonr(data_pred[:,1], data_true[:,1]) 
+
+mae_sbp = np.mean(all_mae[:,0])
+mae_dbp = np.mean(all_mae[:,1])
+all_pred.append(np.array(data_pred))
+
+print(mae_sbp)
+print(mae_dbp)
+print(r_sbp, r_dbp)
+
+all_mae_sbp.append(mae_sbp)
+all_mae_dbp.append(mae_dbp)
+all_r_sbp.append(r_sbp)
+all_r_dbp.append(r_dbp)
+
+mae_sbp_mean = np.mean(all_mae_sbp)
+mae_dbp_mean = np.mean(all_mae_dbp)
+r_mean_sbp = np.mean(all_r_sbp)
+r_mean_dbp = np.mean(all_r_dbp)
+
+print("Mean of SBP: ", mae_sbp_mean)
+print("Mean of DBP: ", mae_dbp_mean)
+print("Mean of r: ", r_mean_sbp, r_mean_dbp)
+
+
+#%% Calculate Integrated Gradients for quant_ids - multivariate time series
+quant_id = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/ids_fold_pressure/quant_id.npy')
+model = keras.models.load_model('C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/best_model_template0.h5', compile=False)
+
+all_IG_PPG_SBP = []
+all_IG_PPG_DBP = []
+#for i in range(len(quant_id)):
+for i in range(0,1):
+    print(f'Example No:{i+1}')
+    segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='PPG')
     
+    IG_PPG_SBP, IG_PPG_DBP = XAI.get_integrated_gradients(segment_tensor, model=model, baseline=None, num_steps=50)
+    #all_IG_pressure_SBP_multi.append(IG_pressure_SBP_multi)
+    #all_IG_pressure_DBP_multi.append(IG_pressure_DBP_multi)
+    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i), IG_pressure_SBP_multi)
+    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i), IG_pressure_DBP_multi)
 
+#%% Calculate Metrics for all quant_ids
+all_AOPC_SBP_PPG = []
+all_AOPC_DBP_PPG = []
+all_APT_SBP_PPG = []
+all_APT_DBP_PPG = []
 
+#for i in range(0,len(quant_id)):
+for i in range(0,15):
+    IG_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPPG/SBP/quant_id_'+str(i)+'.npy')
+    IG_DBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPPG/DBP/quant_id_'+str(i)+'.npy')
+    #IG_pressure_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i))
+    #IG_pressure_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i))
+    segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='PPG')
+    #AOPC_SBP_multi = metrics.calculate_AOPC(segment_tensor ,IG_pressure_SBP , k=10, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi)
+    AOPC_SBP_PPG, y_pred_SBP_x = metrics.calculate_AOPC(segment_tensor, IG_SBP, k=15, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model)
+    AOPC_DBP_PPG, y_pred_DBP_x = metrics.calculate_AOPC(segment_tensor, IG_DBP, k=15, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model)
+    all_AOPC_SBP_PPG.append(AOPC_SBP_PPG)
+    all_AOPC_DBP_PPG.append(AOPC_DBP_PPG)
+    '''
+    APT_SBP_PPG, k_SBP = metrics.calculate_APT(segment_tensor, all_IG_PPG_SBP[i], alpha=0.05 , pattern='morf', window_length=5, replacement_strategy='global_mean', model=model, mode='SBP')
+    APT_DBP_PPG, k_DBP = metrics.calculate_APT(segment_tensor, all_IG_PPG_DBP[i], alpha=0.05 ,pattern='morf', window_length=5, replacement_strategy='global_mean', model=model, mode='DBP')
+    all_APT_SBP_PPG.append(APT_SBP_PPG)
+    all_APT_DBP_PPG.append(APT_DBP_PPG)
+    '''
+#%%
 PPG = batch_data[0]
 PPG1 = batch_data[1]
 PPG2 = batch_data[2]
@@ -224,203 +222,6 @@ for i in range(0,len(Zero_Baseline)):
     one_signal = np.expand_dims(one_signal, axis=0)
     Zero_Baseline_Tensor.append(tf.cast(one_signal, tf.float32))
 
-#%% Integrated Gradients Algorithm Implementation
-def make_input_tensors(batch, batch_size):
-    ''' 
-    Computes the input signals as tf tensors for a batch of data
-        
-    Args:
-        - batch: batch of data from the Data Generator
-        - batch_size: --> predetermined in script
-        
-    Returns a batch of data as tf tensors
-    '''
-    #Define batch size and number of input signals for neuraln network as variables
-    n_input_signals = 6
-    l = batch_size
-    
-    #Make array for all instances
-    all_instances = []
-    
-    #Iterate over all instances in the batch
-    for i in range(0,l):
-        instance = []
-        #Iterate over all 6 input signals for an instance
-        for j in range(0,n_input_signals):
-            one_signal = batch[j][i]
-            one_signal = np.expand_dims(one_signal, axis=0)
-            instance.append(tf.cast(one_signal, tf.float32))
-        all_instances.append(instance)
-    
-    return all_instances
-
-def make_all_instances(batch, batch_size):
-    ''' 
-    Computes the input signals as np.array for a batch of data
-        
-    Args:
-        - batch: batch of data from the Data Generator
-        - batch_size: --> predetermined in script
-        
-    Returns a batch of data as list of numpy arrays
-    '''
-    #Define batch size and number of input signals for neural network as variables
-    n_input_signals = 6
-    l = batch_size
-    
-    #Make array for all instances
-    all_instances = []
-    
-    #Iterate over all instances in the batch
-    for i in range(0,l):
-        instance = []
-        #Iterate over all 6 input signals for an instance
-        for j in range(0,n_input_signals):
-            one_signal = batch[j][i]
-            one_signal = np.expand_dims(one_signal, axis=0)
-            #instance.append(tf.cast(one_signal, tf.float32))
-            instance.append(one_signal)
-        all_instances.append(instance)
-    
-    return all_instances
-
-
-def get_gradients(instance):
-    '''
-    Computes the gradients of the output with respect to the input
-    
-    Args:
-        - instance: list with all 6 input signals, input signals in the format of tf tensors
-       
-    Returns the gradients of the prediction with respect to the input signals
-    for systolic and diastolic blood pressure
-    '''
-    
-    #Array for all gradients
-    grads = []
-    
-    #Get gradients with Tensorflow GradientTape class
-    with tf.GradientTape(persistent=True) as tape:
-        tape.watch(instance)
-        preds = model(instance)
-        SBP = preds[:, 0]
-        DBP = preds[:, 1]
-
-    grads_SBP = tape.gradient(SBP, instance)
-    grads_DBP = tape.gradient(DBP, instance)
-    
-    return grads_SBP,grads_DBP
-
-#Gradients = grads[0].numpy()
-    
-def get_integrated_gradients(segment, baseline=None, num_steps=50):
-    '''
-    Computes the integrated gradients of one segment
-    
-    Args:
-        - segment: one segment of data --> 10s segment
-        - baseline: baseline to calculate the integrated gradients
-        - num_steps: number of interpolations
-
-    Returns the integrated gradients for the specified arguments
-
-    '''
-    shape = np.shape(segment)
-    n_input_signals = shape[0]
-    #print(f'inputsignals={n_input_signals}')
-    #n_input_signals = 6
-    
-    if baseline == None:
-        baseline = np.zeros((1,1000))
-    elif baseline == 'Random_Signal':
-        np.random.seed(0)
-        baseline = np.random.default_rng().uniform(-1,1,(1,1000))
-    elif baseline == 'Noise_Signal':
-        noise = np.random.normal(0,1,1000)
-        noise = np.expand_dims(noise, axis=0)
-        baseline = segment + noise
-    
-    #Step 1: Do Interpolation
-    interpolated_signals = []
-    for step in range(num_steps+1):
-        interpolated_signal = baseline +  (step/num_steps) * (segment - baseline)
-        interpolated_signals.append(interpolated_signal)
-    
-    #Step 2: Get gradients from interpolated signals
-    grads_SBP = []
-    grads_DBP = []
-    for i, signals in enumerate(interpolated_signals):
-        print(f"Interpolated Signal {i}")
-        #Make input tensor
-        interpolated_signals_tensors = [tf.cast(signals[j], tf.float32) for j in range(0,n_input_signals)]
-        #Get Gradients for one instance
-        grad_SBP, grad_DBP = get_gradients(interpolated_signals_tensors)
-        #Save gradients in list
-        grads_SBP.append(grad_SBP)
-        grads_DBP.append(grad_DBP)
-        #print(f"i={i}, und signal={signal[0]")
-        #interpolated_signals_tensors = []
-        
-    #Step 3: Approximate the integral
-    #Make Numpy Arrays
-    grads_SBP_numpy = np.array(grads_SBP)
-    grads_DBP_numpy = np.array(grads_DBP)
-    
-    
-    #Approximate the integral using the Riemann Sum/ Trapezoidal Rule
-    #Riemann Sum
-    sum_SBP = np.sum(grads_SBP_numpy, axis=0)
-    sum_DBP = np.sum(grads_DBP_numpy, axis=0)
-    #Trapezoidal Rule
-    #grads_SBP_TR = grads_SBP_numpy[:-1] + grads_SBP_numpy[1:] / 2.0
-    #grads_DBP_TR = grads_DBP_numpy[:-1] + grads_DBP_numpy[1:] / 2.0
-    
-    #Calculate Average Grads
-    #Riemann Sum
-    avg_grads_SBP = sum_SBP * (1/(num_steps))
-    avg_grads_DBP = sum_DBP * (1/(num_steps))
-
-    #Trapezoidal Rule
-    #avg_grads_SBP = np.mean(grads_SBP_TR, axis=0)
-    #avg_grads_DBP = np.mean(grads_DBP_TR, axis=0)
-    
-    #Step 4: Calculate integrated gradients and return
-    integrated_grads_SBP = (segment - baseline) * avg_grads_SBP
-    integrated_grads_DBP = (segment - baseline) * avg_grads_DBP
-        
-    return integrated_grads_SBP, integrated_grads_DBP
-
-
-def normalize_IG(IG, method):
-    IG_matrix = np.squeeze(IG.copy())
-    matrix_shape = np.shape(IG_matrix)
-    IG_vector = np.reshape(IG_matrix,(1,matrix_shape[0]*matrix_shape[1]))
-    IG_max = np.max(IG_vector)
-    IG_min = np.min(IG_vector)
-    
-    all_mean = []
-    all_std = []
-    for i in range(matrix_shape[0]):
-        mean = np.mean(IG_matrix[i])
-        std = np.std(IG_matrix[i])
-        all_mean.append(mean)
-        all_std.append(std)
-
-    if method == 'min_max':
-        IG = (IG-IG_min) / (IG_max-IG_min)
-    elif method == 'max':
-        IG = IG/IG_max
-    elif method == 'zero_mean':
-        IG = np.zeros((6,1000))
-        for i in range(0,matrix_shape[0]):
-            IG[i,:] = (IG_matrix[i,:]-all_mean[i])/all_std[i]
-    
-    return IG
-
-def sum_IG(IG):
-    IG_summed = np.sum(IG, axis=0)
-    
-    return IG_summed
     
 
 #IG_SBP_normalized = normalize_IG(IG_zero_SBP[0], method='zero_mean')
@@ -428,10 +229,10 @@ def sum_IG(IG):
 #%%
 #Make Input Data Tensors --> correct format for Integrated Gradients Algorithm
 #all_instances = make_all_instances(batch_data, batch_size)
-all_instances = make_input_tensors(batch_data, batch_size)
+all_instances = XAI.make_input_tensors(batch_data, batch_size)
 #Calculate one example
-grads_SBP, grads_DBP = get_gradients(all_instances[1])
-IG_SBP, IG_DBP = get_integrated_gradients(all_instances[1], baseline=None, num_steps=50)
+grads_SBP, grads_DBP = XAI.get_gradients(all_instances[1])
+IG_SBP, IG_DBP = XAI.get_integrated_gradients(all_instances[1], baseline=None, num_steps=50)
 
 
 #%% Calculate 100 examples with zero baseline
@@ -441,28 +242,16 @@ IG_DBP_examples_zero = []
 for i in range(100,300):
     print(f"Example No.{i+1} - Zero Baseline")
     #grads_SBP, grads_DBP = get_gradients(all_instances[i])
-    IG_SBP, IG_DBP = get_integrated_gradients(all_instances[i], baseline=None, num_steps=50)
+    IG_SBP, IG_DBP = XAI.get_integrated_gradients(all_instances[i], baseline=None, num_steps=50)
     IG_SBP_examples_zero.append(IG_SBP)
     IG_DBP_examples_zero.append(IG_DBP)
 
 #np.save(target_path+'IG/IG_zero_SBP_100_300', IG_SBP_examples_zero)
-#np.save(target_path+'IG/IG_zero_DBP_100_300', IG_DBP_examples_zero)
-
-#%% Calculate 100 examples with Random baseline
-IG_SBP_examples_random = []
-IG_DBP_examples_random = []
-for i in range(0,3):
-    print(f"Example No.{i+1} - Random Baseline")
-    #grads_SBP, grads_DBP = get_gradients(all_instances[i])
-    IG_SBP, IG_DBP = get_integrated_gradients(all_instances[i], baseline='Random_Signal', num_steps=50)
-    IG_SBP_examples_random.append(IG_SBP)
-    IG_DBP_examples_random.append(IG_DBP)
-
-#np.save(target_path+'IG/IG_random_SBP', IG_SBP_examples_random)  
-#np.save(target_path+'IG/IG_random_DBP', IG_DBP_examples_random)  
+#np.save(target_path+'IG/IG_zero_DBP_100_300', IG_DBP_examples_zero)  
 
 
 #%%Load calculated IG examples
+target_path = 'C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/IG/'
 #50 Interpolation steps - Zero Baseline - Segments 0-100
 IG_zero_SBP_100 = np.load(target_path+'IG/IG_zero_SBP.npy')
 IG_zero_DBP_100 = np.load(target_path+'IG/IG_zero_DBP.npy')
@@ -472,13 +261,6 @@ IG_zero_DBP_300 = np.load(target_path+'IG/IG_zero_DBP_100_300.npy')
 #Concatenate arrays
 IG_zero_SBP = np.concatenate((IG_zero_SBP_100, IG_zero_SBP_300), axis=0)
 IG_zero_DBP = np.concatenate((IG_zero_DBP_100, IG_zero_DBP_300), axis=0)
-
-#50 Interpolation steps - Random Baseline - 100 segments
-IG_random_SBP = np.load(target_path+'IG/IG_random_SBP.npy')
-IG_random_DBP = np.load(target_path+'IG/IG_random_DBP.npy')
-#25 Interpolation Steps - Zero Baseline - 100 segments
-IG_zero_SBP_25steps = np.load(target_path+'IG/IG_zero_SBP_new.npy')
-IG_zero_DBP_25steps = np.load(target_path+'IG/IG_zero_DBP_new.npy')
 
 #%% Subplot all input signals
 vs.subplot_all_input_signals(batch_data, 22, n_input_signals=6)
@@ -519,22 +301,6 @@ plt.grid()
 
 
 
-#%% Calculate Integrated Gradients for certain number of batches
-#Define number of batches to calculate IG for
-nr_batches = 10
-all_IG_SBP = []
-all_IG_DBP = []
-
-for batch_index in range(0,nr_batches):
-    batch_data, temp_true = generator_test.__getitem__(batch_index)
-    all_instances = make_input_tensors(batch_data, batch_size)
-    
-    for i in range(0,len(all_instances)):
-        print(f"Example No.{i+1} - Zero Baseline")
-        #grads_SBP, grads_DBP = get_gradients(all_instances[i])
-        IG_SBP, IG_DBP = get_integrated_gradients(all_instances[i], baseline=None, num_steps=50)
-        all_IG_SBP.append(IG_SBP)
-        all_IG_DBP.append(IG_DBP)
         
 #%% Calculate AOPC and APT for all IG examples
 all_AOPC_SBP = []
@@ -799,7 +565,7 @@ print(f'Subject: {subject} k: {k} window_length: {window_length}--> AOPC_SBP: {A
 #IG_summed = sum_IG(IG_zero_SBP[0])
 #vs.plot_signal_heatmap(PPG[0], IG_zero_SBP[0], signal_nr=0)
 subject_nr = 151
-IG_SBP_normalized = normalize_IG(IG_zero_SBP[subject_nr], method='zero_mean')
+IG_SBP_normalized = XAI.normalize_IG(IG_zero_SBP[subject_nr], method='zero_mean')
 IG_SBP_normalized = np.expand_dims(IG_SBP_normalized, axis=1)
 #vs.subplot_all_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr=subject_nr, colorbar='midpoint_norm')
 #vs.subplot_all_signals_bwr_heatmap(IG_zero_SBP[subject_nr], all_input_signals, subject_nr=subject_nr, colorbar='single')

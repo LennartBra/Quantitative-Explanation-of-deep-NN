@@ -37,6 +37,30 @@ def make_input_tensors(batch, batch_size, n_signals):
 
     return all_instances
 
+def make_input_tensor(segment, n_signals):
+    ''' 
+    Computes the input signals as tf tensors for one segment
+
+    Args:
+        - segment: one segment of data from the Data Generator
+        - n_signals: number of signals in one segment
+
+    Returns one segment of data as tf tensors
+    '''
+    # Define batch size and number of input signals for neural network as variables
+    n_input_signals = n_signals
+
+    # Make array for all instances
+    instance = []
+
+    # Iterate over all input signals for an instance
+    for j in range(0, n_input_signals):
+        one_signal = segment[j]
+        one_signal = np.expand_dims(one_signal, axis=0)
+        instance.append(tf.cast(one_signal, tf.float32))
+
+    return instance
+
 
 def make_all_instances(batch, batch_size, n_signals):
     ''' 
@@ -68,6 +92,188 @@ def make_all_instances(batch, batch_size, n_signals):
 
     return all_instances
 
+def make_instance(batch, index, batch_size, n_signals):
+    ''' 
+    Computes the input signals as np.array for one segment
+
+    Args:
+        - batch: batch of data from the Data Generator
+        - batch_size: --> predetermined in script
+        - n_signals: number of signals in one segment
+
+    Returns a instance of data as list of numpy arrays
+    '''
+    # Define batch size and number of input signals for neural network as variables
+    n_input_signals = n_signals
+    l = batch_size
+
+    # Make array for all instances
+    instance = []
+
+    # Iterate over all 6 input signals for an instance
+    for j in range(0, n_input_signals):
+        one_signal = batch[j][index]
+        one_signal = np.expand_dims(one_signal, axis=0)
+        #instance.append(tf.cast(one_signal, tf.float32))
+        instance.append(one_signal)
+
+    return instance
+
+def make_tf_tensor_from_Segment(Segment, typ):
+    
+    if typ == 'ABP_single':
+        n_signals = 1 
+        ABP = Segment[3]
+        
+        all_signals = np.array(ABP)
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            #one_signal = all_signals[j]
+            one_signal = np.expand_dims(all_signals, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+        
+    elif typ == 'ABP_multi':
+        n_signals = 3
+        ABP0 = Segment[3]
+        ABP1 = Segment[4]
+        ABP2 = Segment[5]
+        
+        all_signals = np.array((ABP0, ABP1, ABP2))
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            one_signal = all_signals[j]
+            one_signal = np.expand_dims(one_signal, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+        
+    
+    elif typ == 'PPG':
+        n_signals = 6
+        PPG0 = Segment[0]
+        PPG1 = Segment[1]
+        PPG2 = Segment[2]
+        temp0 = Segment[6]
+        temp1 = Segment[7]
+        temp2 = Segment[8]
+        
+        all_signals = np.array((PPG0, PPG1, PPG2, temp0, temp1, temp2))
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            one_signal = all_signals[j]
+            one_signal = np.expand_dims(one_signal, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+    
+    return instance
+    
+def make_tf_tensor_from_quant_id(path_main, quant_id, typ):
+    Segment = np.load(path_main+quant_id)
+    
+    if typ == 'ABP_single':
+        n_signals = 1 
+        ABP = Segment[3]
+        
+        all_signals = np.array(ABP)
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            #one_signal = all_signals[j]
+            one_signal = np.expand_dims(all_signals, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+        
+    elif typ == 'ABP_multi':
+        n_signals = 3
+        ABP0 = Segment[3]
+        ABP1 = Segment[4]
+        ABP2 = Segment[5]
+        
+        all_signals = np.array((ABP0, ABP1, ABP2))
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            one_signal = all_signals[j]
+            one_signal = np.expand_dims(one_signal, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+        
+    
+    elif typ == 'PPG':
+        n_signals = 6
+        PPG0 = Segment[0]
+        PPG1 = Segment[1]
+        PPG2 = Segment[2]
+        temp0 = Segment[6]
+        temp1 = Segment[7]
+        temp2 = Segment[8]
+        
+        all_signals = np.array((PPG0, PPG1, PPG2, temp0, temp1, temp2))
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            one_signal = all_signals[j]
+            one_signal = np.expand_dims(one_signal, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+    
+    return instance
+
+def make_np_array_from_quant_id(path_main, quant_id, typ):
+    Segment = np.load(path_main+quant_id)
+    
+    if typ == 'ABP_single':
+        n_signals = 1 
+        
+        instance = np.array((n_signals,1,1000))
+        
+        instance[n_signals][0][:] = Segment[3]
+        
+    elif typ == 'ABP_multi':
+        n_signals = 3
+        print(Segment.shape)
+        
+        instance = np.array((n_signals,1,1000))
+        
+        instance[0][0][:] = Segment[3]
+        instance[1][0][:] = Segment[4]
+        instance[2][0][:] = Segment[5]
+        
+    
+    elif typ == 'PPG':
+        n_signals = 6
+        
+        instance = np.array((6,1,1000))
+        
+        instance[0][0][:] = Segment[0]
+        instance[1][0][:] = Segment[1]
+        instance[2][0][:] = Segment[2]
+        instance[3][0][:] = Segment[6]
+        instance[4][0][:] = Segment[7]
+        instance[5][0][:] = Segment[8]
+    
+    return instance
+    
+def make_segment_from_quant_id(path_main, quant_id, typ):
+    Segment = np.load(path_main+quant_id)
+    
+    return Segment
+
 
 def get_gradients(instance, model):
     '''
@@ -98,7 +304,7 @@ def get_gradients(instance, model):
 #Gradients = grads[0].numpy()
 
 
-def get_integrated_gradients(segment, baseline=None, num_steps=50):
+def get_integrated_gradients(segment, model, baseline=None, num_steps=50):
     '''
     Computes the integrated gradients of one segment
 
@@ -141,7 +347,7 @@ def get_integrated_gradients(segment, baseline=None, num_steps=50):
         interpolated_signals_tensors = [
             tf.cast(signals[j], tf.float32) for j in range(0, n_input_signals)]
         # Get Gradients for one instance
-        grad_SBP, grad_DBP = get_gradients(interpolated_signals_tensors)
+        grad_SBP, grad_DBP = get_gradients(interpolated_signals_tensors, model)
         # Save gradients in list
         grads_SBP.append(grad_SBP)
         grads_DBP.append(grad_DBP)
@@ -203,7 +409,7 @@ def normalize_IG(IG, method):
     elif method == 'max':
         IG = IG/IG_max
     elif method == 'zero_mean':
-        IG = np.zeros((6, 1000))
+        IG = np.zeros((3, 1000))
         for i in range(0, matrix_shape[0]):
             IG[i, :] = (IG_matrix[i, :]-all_mean[i])/all_std[i]
 

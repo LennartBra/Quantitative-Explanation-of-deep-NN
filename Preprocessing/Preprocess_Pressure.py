@@ -195,11 +195,11 @@ class PreprocessingPulseDB_Pressure():
                 # Resampling
                 self._resampling()
                 # Frequency Filter
-                self._filt()
+                #self._filt()
                 # Derivations
                 self._derivation()
                 # Standardize
-                self._standardize_epochwise()
+                #self._standardize_epochwise()
                 # Save Data
                 np.save(self.target_path+'dev0_abp/'+str(sub_id[:-4])+self.db, self._abp_segments)
                 np.save(self.target_path+'dev1_abp/'+str(sub_id[:-4])+self.db, self._dev1_abp)
