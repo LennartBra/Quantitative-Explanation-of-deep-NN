@@ -14,7 +14,7 @@ import math
 
 import DataGenerator_template as DGT
 from DataGenerator_Implementation import DataGenerator
-from make_model_template import make_model_pressure_multi, make_model_pressure_uni
+from make_model_template import make_model_pressure_multi, make_model_pressure_uni, make_model_pressure_multi_900
 
 from scipy.signal import resample
 import tensorflow as tf
@@ -34,33 +34,6 @@ import XAI_Method as XAI
 # %matplotlib qt
 
 keras.backend.clear_session()
-
-#Define GPU settings for training of neural network 
-'''
-#Tensorflow settings - use CPU or GPU
-
-#GPU settings 1
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-  try:
-    for gpu in gpus:
-      tf.config.experimental.set_memory_growth(gpu, True)
-  except RuntimeError as e:
-    print(e)
-#os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
-
-#CPU settings
-#tf.device('/cpu:0')
-
-
-#GPU settings 2
-from tensorflow.compat.v1 import ConfigProto
-from tensorflow.compat.v1 import InteractiveSession
-config = ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.5
-config.gpu_options.allow_growth = True
-session = InteractiveSession(config=config)
-'''
 
 if tf.test.gpu_device_name():
     print("Default GPU Device: {}".format(tf.test.gpu_device_name()))
@@ -91,6 +64,11 @@ train_index, val_index = train_test_split(train_index, test_size=0.11111, random
 train_id = [files[x] for x in train_index]
 val_id = [files[x] for x in val_index]
 test_id = [files[x] for x in test_index]
+
+train_id = np.load('ids_fold_pressure/train_id.npy')
+val_id = np.load('ids_fold_pressure/val_id.npy')
+test_id = np.load('ids_fold_pressure/test_id.npy')
+quant_id = np.load('ids_fold_pressure/quant_id.npy')
 
 #%% Make IDs for quantitative dataset
 #Calculate distribution of test data
@@ -146,13 +124,14 @@ for i, (train_index, test_index) in enumerate(skf.split(test_samples, data_true_
 data_true_rounded_SBP = data_true_rounded[quant_indexes, 0]
 data_true_rounded_DBP = data_true_rounded[quant_indexes, 1]
 
+
 n_bins_true = len(np.unique(data_true_rounded_SBP))
 
 plt.figure()
-plt.hist(data_true_rounded_SBP, n_bins_true*2)
-plt.hist(data_true_rounded_DBP, n_bins_true*2)
+plt.hist(data_true_SBP, n_bins_true*3)
+plt.hist(data_true_DBP, n_bins_true*3)
 plt.xlim([20, 200])
-plt.ylim([0, 400])
+plt.ylim([0, 5500])
 plt.title('Histogram of the Ground Truth data - Test Dataset - Sample Fold')
 plt.xlabel('Blood Pressure')
 plt.ylabel('Counts')
@@ -161,7 +140,9 @@ plt.grid()
 quant_id = []
 for i in range(0,len(quant_indexes)):
      quant_id.append(test_id[quant_indexes[i]])
-     
+
+#quant_id = np.load('ids_fold_pressure/quant_id.npy')
+
 y_true_quant_id_SBP = []
 y_true_quant_id_DBP = []
 for ID in quant_id:
@@ -182,12 +163,25 @@ plt.xlabel('Blood Pressure')
 plt.ylabel('Counts')
 plt.grid()
 
+#Make figure of distributions for MasterStudienarbeit
+fig, axs = plt.subplots(1,2)
+fig.supxlabel('Blood Pressure in mmHg')
+axs[0].hist(data_true_SBP, n_bins_true*3)
+axs[0].hist(data_true_DBP, n_bins_true*3)
+axs[0].set_xlim([20, 200])
+axs[0].set_ylim([0, 5000])
+axs[0].title.set_text('Test Dataset')
+axs[0].set_ylabel('Count')
+axs[1].hist(y_true_quant_id_SBP, n_bins_true*2)
+axs[1].hist(y_true_quant_id_DBP, n_bins_true*2)
+axs[1].set_xlim([20, 200])
+axs[1].set_ylim([0, 400])
+axs[1].title.set_text('Quantitative Dataset')
+
+
 #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/ids_fold_pressure/quant_id.npy', quant_id)
 #train_id2 = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/ids_fold_pressure/train_id.npy')
 # %%Train neural network - multivariate time series
-###############################################################################
-#######################   MULTIVARIATE TIME SERIES    #########################
-###############################################################################
 print("Train TemplateNet with PulseDB - Multivariate Time Series")
 all_mae_sbp, all_mae_dbp, subject_result, all_pred, all_r_sbp, all_r_dbp = [], [], [], [], [], []
 
@@ -198,16 +192,16 @@ generator_val = DataGenerator(path_main, val_id, batch_size=batch_size, typ='ABP
 generator_test = DataGenerator(path_main, test_id, batch_size=batch_size, typ='ABP_multi', shuffle=False)
 
 # %% Start Training
-model_abp_multi = make_model_pressure_multi()
+#model_abp_multi = make_model_pressure_multi()
 # Load model with weights
-#model_abp_multi = keras.models.load_model('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/best_model_template_pressure_multivariate-TS-Session1.h5', compile=False)
+model_abp_multi = keras.models.load_model('models/best_model_pressure_multivariate_datanew_epoch2.h5', compile=False)
 
 
 # Make training
 optimizer = optimizers.Adam(learning_rate=0.0001)
 
 es = EarlyStopping(monitor="mae", patience=10)
-mcp = ModelCheckpoint('best_model_template_pressure_multivariate-TS-Session1'+'.h5',
+mcp = ModelCheckpoint('best_model_pressure_multivariate_datanew_epoch3'+'.h5',
                       monitor='val_mae', save_best_only=True)
 reduce_lr = ReduceLROnPlateau(
     monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8)
@@ -220,317 +214,148 @@ model_abp_multi.fit(generator_train,
               callbacks=[es, mcp, reduce_lr])
 
 
-#%% Make prediction
-model_abp_multi = keras.models.load_model('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/best_model_template_pressure_multivariate-TS-Session1.h5', compile=False)
-nr_data = generator_test.__len__()
-all_mae = np.zeros((nr_data, 2))
+#%% Make prediction on quantitative dataset and get MAE
+model_abp_multi = keras.models.load_model('models/best_model_pressure_multivariate_datanew_epoch2.h5', compile=False)
 
-print('Prediction')
-#for batch_index in range(0, nr_data):
-for batch_index in range(0,10):
-    batch_data, temp_true = generator_test.__getitem__(batch_index)
-    if batch_index == 1:
-        batch_data1 = batch_data
-        temp_true1 = temp_true
-    if batch_index == 2:
-        batch_data2 = batch_data
-        temp_true2 = temp_true
+all_preds_SBP = []
+all_preds_DBP = []
+all_ytrue_SBP = []
+all_ytrue_DBP = []
 
-    print(f'batch_index: {batch_index}')
-
-    temp_pred = model_abp_multi.predict(batch_data, verbose=0, batch_size=batch_size)
+print('Make Prediction on quantitative dataset')
+#for i in range(0,len(quant_id)):
+for i in range(0,500):    
+    segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='ABP_multi')
+    segment = XAI.make_segment_from_quant_id(path_main, quant_id[i])
+    print(f'Segment: {i}/{len(quant_id)}')
+    pred_segment = model_abp_multi.predict(segment_tensor, verbose=0)
     
-    if batch_index == 0:
-        data_true = temp_true
-        data_pred = temp_pred
-    else:
-        data_true = np.concatenate((data_true, temp_true), axis=0)
-        data_pred = np.concatenate((data_pred, temp_pred), axis=0)
+    all_preds_SBP.append(pred_segment[0,0])
+    all_preds_DBP.append(pred_segment[0,1])
 
-    mae_sbp_batch = mean_absolute_error(temp_pred[..., 0], temp_true[:, 0])
-    mae_dbp_batch = mean_absolute_error(temp_pred[..., 1], temp_true[:, 1])
+    all_ytrue_SBP.append(segment[9,0])
+    all_ytrue_DBP.append(segment[9,1])
 
-    all_mae[batch_index] = np.array([mae_sbp_batch, mae_dbp_batch])
+MAE_SBP = mean_absolute_error(all_ytrue_SBP,all_preds_SBP)
+MAE_DBP = mean_absolute_error(all_ytrue_DBP,all_preds_DBP)
 
-r_sbp, _ = pearsonr(data_pred[:, 0], data_true[:, 0])
-r_dbp, _ = pearsonr(data_pred[:, 1], data_true[:, 1])
-
-mae_sbp = np.mean(all_mae[:, 0])
-mae_dbp = np.mean(all_mae[:, 1])
-all_pred.append(np.array(data_pred))
-
-print(mae_sbp)
-print(mae_dbp)
-print(r_sbp, r_dbp)
-
-all_mae_sbp.append(mae_sbp)
-all_mae_dbp.append(mae_dbp)
-all_r_sbp.append(r_sbp)
-all_r_dbp.append(r_dbp)
-
-mae_sbp_mean = np.mean(all_mae_sbp)
-mae_dbp_mean = np.mean(all_mae_dbp)
-r_mean_sbp = np.mean(all_r_sbp)
-r_mean_dbp = np.mean(all_r_dbp)
-
-print("Mean of SBP: ", mae_sbp_mean)
-print("Mean of DBP: ", mae_dbp_mean)
-print("Mean of r: ", r_mean_sbp, r_mean_dbp)
+print("Mean of SBP: ", MAE_SBP)
+print("Mean of DBP: ", MAE_DBP)
 
 #%% Calculate Integrated Gradients for quant_ids - multivariate time series
-quant_id = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/ids_fold_pressure/quant_id.npy')
+quant_id = np.load('ids_fold_pressure/quant_id.npy')
+path_main = 'C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data_new/'
+#model_abp_multi = keras.models.load_model('best_model_template_pressure_multivariate-TS-Session2.h5')
+model_abp_multi = keras.models.load_model('models/best_model_pressure_multivariate_datanew_epoch2.h5', compile=False)
 
-all_IG_pressure_SBP_multi = []
-all_IG_pressure_DBP_multi = []
 #for i in range(len(quant_id)):
-for i in range(0,15):
-    print(f'Example No:{i+1}')
+for i in range(55,56):
+    print(f'Example No:{i}')
     segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='ABP_multi')
     
-    IG_pressure_SBP_multi, IG_pressure_DBP_multi = XAI.get_integrated_gradients(segment_tensor, model=model_abp_multi, baseline=None, num_steps=50)
-    all_IG_pressure_SBP_multi.append(IG_pressure_SBP_multi)
-    all_IG_pressure_DBP_multi.append(IG_pressure_DBP_multi)
-    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i), IG_pressure_SBP_multi)
-    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i), IG_pressure_DBP_multi)
+    IG_SBP_ABP, IG_DBP_ABP = XAI.get_integrated_gradients(segment_tensor, model=model_abp_multi, baseline=None, num_steps=50)
+    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/quant_id_'+str(i), IG_SBP_ABP)
+    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/quant_id_'+str(i), IG_DBP_ABP)
     
-#%% Calculate Metrics for all quant_ids
-all_AOPC_SBP_multi = []
-all_AOPC_DBP_multi = []
-all_APT_SBP_multi = []
-all_APT_DBP_multi = []
+#%% Calculate AOPC for all quant_ids
+#Load variables
+quant_id = np.load('ids_fold_pressure/quant_id.npy')
+model_ABP = keras.models.load_model('models/best_model_pressure_multivariate_datanew_epoch2.h5', compile=False)
 
+#Define Hyperparameters for AOPC
+k = 15
+pattern = 'morf'
+window_length = 10
+replacement_strategy = 'global_mean'
+
+#Make list for all sums
+all_sums_SBP_ABP = []
+all_sums_DBP_ABP = []
+#Loop over all instances of quantitative dataset
 #for i in range(0,len(quant_id)):
-for i in range(0,15):
-    #IG_pressure_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i))
-    #IG_pressure_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i))
+for i in range(0,20):
+    print(f'ID: {i}/{len(quant_id)}')
+    #Load Integrated Gradients
+    IG_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetABP/SBP/quant_id_'+str(i)+'.npy')
+    IG_DBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetABP/DBP/quant_id_'+str(i)+'.npy')
+    #Load Segment data
     segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='ABP_multi')
-    #AOPC_SBP_multi = metrics.calculate_AOPC(segment_tensor ,IG_pressure_SBP , k=10, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi)
-    AOPC_SBP_multi, y_pred_SBP_x = metrics.calculate_AOPC(segment_tensor, all_IG_pressure_SBP_multi[i], k=15, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi)
-    AOPC_DBP_multi, y_pred_DBP_x = metrics.calculate_AOPC(segment_tensor, all_IG_pressure_DBP_multi[i], k=15, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi)
-    all_AOPC_SBP_multi.append(AOPC_SBP_multi)
-    all_AOPC_DBP_multi.append(AOPC_DBP_multi)
-    APT_SBP_multi, k_SBP = metrics.calculate_APT(segment_tensor, all_IG_pressure_SBP_multi[i], alpha=0.05 , pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi, mode='SBP')
-    APT_DBP_multi, k_DBP = metrics.calculate_APT(segment_tensor, all_IG_pressure_DBP_multi[i], alpha=0.05 ,pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi, mode='SBP')
-    all_APT_SBP_multi.append(APT_SBP_multi)
-    all_APT_DBP_multi.append(APT_DBP_multi)
+    #Calculate AOPC sum for segment with Integrated Gradients
+    summe_SBP = metrics.calculate_AOPC_sum(segment_tensor, IG_SBP, k, pattern, window_length, replacement_strategy='global_mean', model=model_ABP)
+    summe_DBP = metrics.calculate_AOPC_sum(segment_tensor, IG_DBP, k, pattern, window_length, replacement_strategy='global_mean', model=model_ABP)
     
-#%% Test Importance of 995th sample
-all_AOPC_SBP_multi = []
-all_AOPC_DBP_multi = []
-all_diffs_SBP = []
-all_diffs_DBP = []
+    all_sums_SBP_ABP.append(summe_SBP)
+    all_sums_DBP_ABP.append(summe_DBP)
+ 
+#Make np arrays    
+all_sums_SBP_ABP = np.squeeze(np.array(all_sums_SBP_ABP))
+all_sums_DBP_ABP = np.squeeze(np.array(all_sums_DBP_ABP))
+#Calculate mean over whole dataset
+mean_SBP_ABP = np.mean(all_sums_SBP_ABP[:,0])
+mean_DBP_ABP = np.mean(all_sums_DBP_ABP[:,1])
+#Calculate final AOPC values
+AOPC_SBP_ABP = (1/(k+1)) * mean_SBP_ABP
+AOPC_DBP_ABP = (1/(k+1)) * mean_DBP_ABP
 
-for i in range(0,15):
-    #IG_pressure_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i))
-    #IG_pressure_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i))
+
+#%% Calculate APT for all quant_ids
+#Load variables
+quant_id = np.load('ids_fold_pressure/quant_id.npy')
+model_ABP = keras.models.load_model('models/best_model_pressure_multivariate_datanew_epoch2.h5', compile=False)
+
+#Define Hyperparameters for APT
+alpha = 0.05
+pattern = 'morf'
+window_length = 10
+replacement_strategy = 'global_mean'
+
+#Make list for all APT scores
+#all_APT_SBP_ABP = []
+#all_APT_DBP_ABP = []
+#Loop over all instances of quantitative dataset
+#for i in range(0,len(quant_id)):
+for i in range(16,17):
+    print(f'ID: {i}/{len(quant_id)}')
+    #Load Integrated Gradients
+    IG_SBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetABP/SBP/quant_id_'+str(i)+'.npy')
+    IG_DBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetABP/DBP/quant_id_'+str(i)+'.npy')
+    #Load Segment data
     segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='ABP_multi')
-    #AOPC_SBP_multi = metrics.calculate_AOPC(segment_tensor ,IG_pressure_SBP , k=10, pattern='morf', window_length=5, replacement_strategy='global_mean', model=model_abp_multi)
-    AOPC_SBP_multi, diff_SBP = metrics.calculate_AOPC(segment_tensor, all_IG_pressure_SBP_multi[i], k=100, pattern='morf', window_length=1, replacement_strategy='global_mean', model=model_abp_multi)
-    AOPC_DBP_multi, diff_DBP = metrics.calculate_AOPC(segment_tensor, all_IG_pressure_DBP_multi[i], k=100, pattern='morf', window_length=1, replacement_strategy='global_mean', model=model_abp_multi)
-    all_AOPC_SBP_multi.append(AOPC_SBP_multi)
-    all_AOPC_DBP_multi.append(AOPC_DBP_multi)
-    all_diffs_SBP.append(diff_SBP)
-    all_diffs_DBP.append(diff_DBP)
+    #Calculate APT for segment with Integrated Gradients
+    APT_SBP, k_SBP = metrics.calculate_APT(segment_tensor, IG_SBP, alpha , pattern, window_length, replacement_strategy, model=model_ABP, mode='SBP')
+    APT_DBP, k_DBP = metrics.calculate_APT(segment_tensor, IG_DBP, alpha ,pattern, window_length, replacement_strategy, model=model_ABP, mode='DBP')
     
-#%% Mirroring of signal
-test_segment = XAI.make_segment_from_quant_id(path_main, quant_id[0], typ='ABP_multi')
-normal_segment = XAI.make_segment_from_quant_id(path_main, quant_id[0], typ='ABP_multi')
-normal_segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[0], typ='ABP_multi')
-
-#Continue ABP Signal with ABP signal
-ABP_signal = test_segment[3].copy()
-ABP_signal_flipped = np.flip(ABP_signal)
-ABP_one = np.concatenate((ABP_signal, ABP_signal_flipped), axis=0)
-ABP_new = resample(ABP_one[0:1200], num=1000)
-
-test_segment[3] = ABP_new
-test_segment_tensor = XAI.make_tf_tensor_from_Segment(test_segment, typ='ABP_multi')
-
-#IG_SBP_test, IG_DBP_test = XAI.get_integrated_gradients(test_segment_tensor, model=model_abp_multi)
-#IG_SBP_normal, IG_DBP_normal = XAI.get_integrated_gradients(normal_segment_tensor, model=model_abp_multi)
-
-vs.subplot_3_signals_bwr_heatmap(IG_DBP_test, test_segment, colorbar='single', mode='ABP_multi')
-vs.subplot_3_signals_bwr_heatmap(IG_DBP_normal, normal_segment, colorbar='single', mode='ABP_multi')
-
-# %%Train neural network - univariate time series
+    #all_APT_SBP_ABP.append(APT_SBP)
+    #all_APT_DBP_ABP.append(APT_DBP)
+    
+#APT_SBP_ABP = np.mean(all_APT_SBP_ABP)
+#APT_DBP_ABP = np.mean(all_APT_DBP_ABP)
+    
+    
+    
+    
+    
+    
+    
+    
 ###############################################################################
-########################   UNIVARIATE TIME SERIES    ##########################
+##############################       TEST      ################################
 ###############################################################################
-#Define batch size
-batch_size = 64
+#%% Plot quant_id[16] --> APT of 1
+segment = XAI.make_segment_from_quant_id(path_main, quant_id[16])
+vs.subplot_input_signals(segment, mode='ABP_multi')
 
-#Define variables for evaluation on test data
-print("Train TemplateNet with PulseDB")
-all_mae_sbp, all_mae_dbp, subject_result, all_pred, all_r_sbp, all_r_dbp = [], [], [], [], [], []
+IG_DBP_16 = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetABP/DBP/quant_id_'+str(16)+'.npy')
+vs.subplot_3_signals_bwr_heatmap(IG_DBP_16, segment, colorbar='single', mode='ABP_multi')
 
-# Generators
-print("Loading Datagenerator")
-generator_train = DataGenerator(path_main, train_id, batch_size=batch_size, typ='ABP_single', shuffle=False)
-generator_val = DataGenerator(path_main, val_id, batch_size=batch_size, typ='ABP_single', shuffle=False)
-generator_test = DataGenerator(path_main, test_id, batch_size=batch_size, typ='ABP_single', shuffle=False)
-
-# %% Start Training
-#model_abp_uni = make_model_pressure_uni()
-# Load model with weights
-#model_abp_uni = keras.models.load_model('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/best_model_template_pressure_univariate-TS.h5', compile=False)
-model_abp_uni = keras.models.load_model('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/best_model_template_pressure_univariate-TS-Session2.h5', compile=False)
-'''
-# Make training
-optimizer = optimizers.Adam(learning_rate=0.0001)
-
-es = EarlyStopping(monitor="mae", patience=10)
-mcp = ModelCheckpoint('best_model_template_pressure_univariate-TS_session2' +
-                      '.h5', monitor='val_mae', save_best_only=True)
-reduce_lr = ReduceLROnPlateau(
-    monitor='val_loss', factor=0.1, patience=5, min_lr=1e-8)
-model_abp.compile(optimizer=optimizer, loss='mse', metrics=['mae'])
-
-model_abp.fit(generator_train,
-              validation_data=generator_val,
-              epochs=4,
-              verbose=1,
-              callbacks=[es, mcp, reduce_lr])
-'''
-# Make prediction
-nr_data = generator_test.__len__() 
-all_mae = np.zeros((nr_data, 2))
-
-print('Prediction')
-for batch_index in range(0, nr_data):
-    # for batch_index in range(0,1):
-    batch_data, temp_true = generator_test.__getitem__(batch_index)
-    #print(f'batch_index: {batch_index}')
-
-    if batch_index == 0:
-        data_true = temp_true
-        data_pred = temp_pred
-    else:
-        data_true = np.concatenate((data_true, temp_true), axis=0)
-        data_pred = np.concatenate((data_pred, temp_pred), axis=0)
-
-    mae_sbp_batch = mean_absolute_error(temp_pred[..., 0], temp_true[:, 0])
-    mae_dbp_batch = mean_absolute_error(temp_pred[..., 1], temp_true[:, 1])
-
-    all_mae[batch_index] = np.array([mae_sbp_batch, mae_dbp_batch])
-
-r_sbp, _ = pearsonr(data_pred[:, 0], data_true[:, 0])
-r_dbp, _ = pearsonr(data_pred[:, 1], data_true[:, 1])
-
-mae_sbp = np.mean(all_mae[:, 0])
-mae_dbp = np.mean(all_mae[:, 1])
-all_pred.append(np.array(data_pred))
-
-print(mae_sbp)
-print(mae_dbp)
-print(r_sbp, r_dbp)
-
-all_mae_sbp.append(mae_sbp)
-all_mae_dbp.append(mae_dbp)
-all_r_sbp.append(r_sbp)
-all_r_dbp.append(r_dbp)
-
-mae_sbp_mean = np.mean(all_mae_sbp)
-mae_dbp_mean = np.mean(all_mae_dbp)
-r_mean_sbp = np.mean(all_r_sbp)
-r_mean_dbp = np.mean(all_r_dbp)
-
-print("Mean of SBP: ", mae_sbp_mean)
-print("Mean of DBP: ", mae_dbp_mean)
-print("Mean of r: ", r_mean_sbp, r_mean_dbp)
+#%% Plot some DBP examples
+for i in range(20,50):
+    segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='ABP_multi')
+    segment = XAI.make_segment_from_quant_id(path_main, quant_id[i])
+    pred = model_ABP.predict(segment_tensor)
+    true = segment[9,1]
+    print(f'Segment:{i}, y_pred: {pred[0,1]}, y_true: {true}')
+    IG_DBP = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetABP/DBP/quant_id_'+str(i)+'.npy')
+    #vs.subplot_3_signals_bwr_heatmap(IG_DBP, segment, colorbar='single', mode='ABP_multi')
 
 
-#%% Caclulate IG for quant_ids with univariate time series
-model_abp_uni = keras.models.load_model('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/best_model_template_pressure_univariate-TS-Session2.h5', compile=False)
-
-quant_id = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Code/Quantitative Explanation of deep NN/ids_fold_pressure/quant_id.npy')
-
-all_IG_pressure_SBP_uni = []
-all_IG_pressure_DBP_uni = []
-#for i in range(len(quant_id)):
-for i in range(0,15):
-    print(f'Example No:{i+1}')
-    segment_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[i], typ='ABP_single')
-    
-    IG_pressure_SBP_uni, IG_pressure_DBP_uni = XAI.get_integrated_gradients(segment_tensor, model=model_abp_uni, baseline=None, num_steps=50)
-    all_IG_pressure_SBP_uni.append(IG_pressure_SBP_uni)
-    all_IG_pressure_DBP_uni.append(IG_pressure_DBP_uni)
-    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i), IG_pressure_SBP_multi)
-    #np.save('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/IG/TemplateNetPressure_Multi/SBP/'+str(i), IG_pressure_DBP_multi)
-    
-#%% Visualize examples
-subject_nr = 13
-Segment = np.load(path_main+quant_id[subject_nr])
-vs.plot_onesignal_bwr_heatmap(all_IG_pressure_SBP_uni[subject_nr], Segment[3], signal_nr=0)
-#vs.subplot_3_signals_bwr_heatmap(all_IG_pressure_SBP_multi[subject_nr], Segment, colorbar='single', mode='ABP_multi')
-
-# %% Visualize Results
-subject_nr = 2
-Segment0 = np.load(path_main+quant_id[0])
-Segment1 = np.load(path_main+quant_id[1])
-Segment2 = np.load(path_main+quant_id[2])
-#IG_normalized = normalize_IG(all_IG_pressure_SBP[subject_nr], method='zero_mean')
-
-#vs.subplot_3_signals_bwr_heatmap(all_IG_pressure_SBP[subject_nr], all_input_signals, subject_nr, colorbar='single', mode='PPG')
-#vs.subplot_3_signals_bwr_heatmap(IG_normalized, all_input_signals, subject_nr, colorbar='single', mode='PPG')
-
-#vs.plot_onesignal_bwr_heatmap(all_IG_pressure_SBP[subject_nr], ABP[0][subject_nr], signal_nr=0)
-#vs.plot_onesignal_bwr_heatmap(all_IG_pressure_SBP[1], Segment1[3] , signal_nr=0)
-#vs.plot_onesignal_bwr_heatmap(all_IG_pressure_SBP[1], Segment1[4] , signal_nr=1)
-#vs.plot_onesignal_bwr_heatmap(all_IG_pressure_SBP[1], Segment1[5] , signal_nr=2)
-
-
-
-for i in range(13,14): #3, 10, 14
-    subject_nr = i
-    Segment = np.load(path_main+quant_id[i])
-    #IG_normalized = XAI.normalize_IG(all_IG_pressure_SBP[subject_nr], method='zero_mean')
-    #IG_normalized = np.expand_dims(IG_normalized, axis=1)
-    #vs.subplot_3_signals_bwr_heatmap(IG_normalized, Segment, colorbar='single', mode='ABP_multi')
-    vs.subplot_3_signals_bwr_heatmap(all_IG_pressure_SBP_multi[i], Segment, colorbar='single', mode='ABP_multi')
-
-'''
-IG_test = all_IG_pressure_SBP_multi[13].copy()
-IG_test[0][0][995] = 2.5
-Segment14 = np.load(path_main+quant_id[13])
-vs.subplot_3_signals_bwr_heatmap(IG_test, Segment, colorbar='single', mode='ABP_multi')
-#vs.subplot_3_signals_bwr_heatmap(all_IG_pressure_DBP[subject_nr], Segment2, colorbar='single', mode='ABP_multi')
-'''
-#%% Test section
-instance_tensor = XAI.make_tf_tensor_from_quant_id(path_main, quant_id[0], typ='ABP_single')
-
-IG_pressure_SBP, IG_pressure_DBP = XAI.get_integrated_gradients(instance_tensor, baseline=None, num_steps=50, model=model_abp_uni)
-
-
-Instance_np = XAI.make_instance(batch_data, index=1, batch_size=batch_size, n_signals=1)
-Instance_tf = XAI.make_input_tensor(Instance_np, n_signals=1)
-a1, a2 = XAI.get_integrated_gradients(Instance_tf[0], model_abp_uni, baseline=None, num_steps=50)
-
-#%% Test Data Generator
-#generator_train = DataGenerator(path_main, train_id, batch_size=batch_size, typ='ABP_multi', shuffle=False)
-#generator_val = DataGenerator(path_main, val_id, batch_size=batch_size, typ='ABP_multi', shuffle=False)
-generator_test = DataGenerator(path_main, files, batch_size=batch_size, typ='ABP_multi', shuffle=False)
-
-old_path = 'C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/'
-old_files = os.listdir(old_path+'dev0/')
-#old_generator_train = DGT.DataGenerator(old_path, train_id, batch_size=batch_size, shuffle=False)
-#old_generator_val = DGT.DataGenerator(old_path, val_id, batch_size=batch_size, shuffle=False)
-old_generator_test = DGT.DataGenerator_Pressure(old_path, old_files, batch_size=batch_size, shuffle=False)
-
-length = generator_test.__len__()
-
-for i in range(0,length):
-    if i==0:
-        old_batch_data0, old_temp_true0 = old_generator_test.__getitem__(0)
-        batch_data0, temp_true0 = generator_test.__getitem__(0)
-    if i ==12000:
-        old_batch_data1, old_temp_true1 = old_generator_test.__getitem__(i)
-        batch_data1, temp_true1 = generator_test.__getitem__(i)        
-    if i == 2274:
-        old_batch_data2, old_temp_true2 = old_generator_test.__getitem__(i)
-        batch_data2, temp_true2 = generator_test.__getitem__(i)
-
-
-
-
-    
-    

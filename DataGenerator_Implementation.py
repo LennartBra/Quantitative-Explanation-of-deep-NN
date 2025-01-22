@@ -75,6 +75,8 @@ class DataGenerator(Sequence):
             X = [x[0], x[1], x[2], x[3], x[4], x[5]]
         elif self.typ == 'ABP_multi':
             X = [x[0], x[1], x[2]]
+        elif self.typ == 'ABP_multi_900':
+            X = [x[0], x[1], x[2]]
         elif self.typ == 'ABP_single':
             X = [x[0]]
 
@@ -132,6 +134,24 @@ class DataGenerator(Sequence):
                 
             x = np.asarray([x1, x2, x3])
             y = np.asarray(y)
+            
+        elif self.typ == 'ABP_multi_900':
+            #Intialization
+            x1, x2, x3 = [np.zeros((self.batch_size, 900)) for i in range(3)]
+            y = np.zeros((self.batch_size, self.n_classes))
+            
+            #Generate data
+            for i, ID in enumerate(list_IDs_temp):
+                Segment = np.load(self.path_main+'/'+ID)
+                x1[i] = Segment[self.ABP0][50:950]
+                x2[i] = Segment[self.ABP1][50:950]
+                x3[i] = Segment[self.ABP2][50:950]
+                
+                y[i] = Segment[self.ground_truth][0:2]
+                
+            x = np.asarray([x1, x2, x3])
+            y = np.asarray(y)
+            
         elif self.typ == 'ABP_single':
             #Initialization
             x1 = np.zeros((self.batch_size, self.n_sample))

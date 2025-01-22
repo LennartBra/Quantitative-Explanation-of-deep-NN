@@ -152,6 +152,23 @@ def make_tf_tensor_from_Segment(Segment, typ):
             one_signal = all_signals[j]
             one_signal = np.expand_dims(one_signal, axis=0)
             instance.append(tf.cast(one_signal, tf.float32))
+            
+    elif typ == 'ABP_multi_900':
+        n_signals = 3
+        ABP0 = Segment[3][50:950]
+        ABP1 = Segment[4][50:950]
+        ABP2 = Segment[5][50:950]
+        
+        all_signals = np.array((ABP0, ABP1, ABP2))
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            one_signal = all_signals[j]
+            one_signal = np.expand_dims(one_signal, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
         
     
     elif typ == 'PPG':
@@ -199,6 +216,23 @@ def make_tf_tensor_from_quant_id(path_main, quant_id, typ):
         ABP0 = Segment[3]
         ABP1 = Segment[4]
         ABP2 = Segment[5]
+        
+        all_signals = np.array((ABP0, ABP1, ABP2))
+        
+        # Make array for all instances
+        instance = []
+
+        # Iterate over all input signals for an instance
+        for j in range(0, n_signals):
+            one_signal = all_signals[j]
+            one_signal = np.expand_dims(one_signal, axis=0)
+            instance.append(tf.cast(one_signal, tf.float32))
+
+    elif typ == 'ABP_multi_900':
+        n_signals = 3
+        ABP0 = Segment[3][50:950]
+        ABP1 = Segment[4][50:950]
+        ABP2 = Segment[5][50:950]
         
         all_signals = np.array((ABP0, ABP1, ABP2))
         
@@ -269,7 +303,7 @@ def make_np_array_from_quant_id(path_main, quant_id, typ):
     
     return instance
     
-def make_segment_from_quant_id(path_main, quant_id, typ):
+def make_segment_from_quant_id(path_main, quant_id):
     Segment = np.load(path_main+quant_id)
     
     return Segment
@@ -323,6 +357,9 @@ def get_integrated_gradients(segment, model, baseline=None, num_steps=50):
 
     if baseline == None:
         baseline = np.zeros((1, 1000))
+        
+        if shape[2] == 900:
+            baseline = np.zeros((1, 900))
     elif baseline == 'Random_Signal':
         np.random.seed(0)
         baseline = np.random.default_rng().uniform(-1, 1, (1, 1000))

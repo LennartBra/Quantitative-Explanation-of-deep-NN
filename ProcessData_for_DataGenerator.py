@@ -7,95 +7,16 @@ Skript: Processing of npy data for DataGenerator
 """
 import numpy as np
 import random
-from tensorflow.keras.utils import Sequence
 import os
+from scipy.signal import resample
+import XAI_Method as XAI
 
 path_main = "C:/Biomedizinische Informationstechnik/2. Semester/Projektarbeit/Code/Data/"
 target_path = "C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/"
 files = os.listdir(path_main+"dev0_abp/")
 db = 'v'
 
-
-def process_data_alt(data_path, list_id, target_path, db):
-    total_nr = 0
-    for i in range(len(list_id)):
-        print(f'Liste ID: {i} von 2938')
-        ## @brief PPG input data of actual subject.
-        ##
-        dev0 = np.load(path_main+"dev0/"+list_id[i], allow_pickle=True)
-        ## @brief First derivation of input data of actual subject.
-        ##
-        dev1 = np.load(path_main+"dev1/"+list_id[i], allow_pickle=True)
-        ## @brief Second derivation of input data of actual subject.
-        ##
-        dev2 = np.load(path_main+"dev2/"+list_id[i], allow_pickle=True)
-        ## @brief Templates of input data of the actual subject.
-        ##
-        temp0 = np.load(path_main+"template/dev0/"+list_id[i], allow_pickle=True)
-        ## @brief Templates of the first derivation of input data of actual subject.
-        ##
-        temp1 = np.load(path_main+"template/dev1/"+list_id[i], allow_pickle=True)
-        ## @brief Templates of the first derivation of input data of actual subject.
-        ##
-        temp2 = np.load(path_main+"template/dev2/"+list_id[i], allow_pickle=True)
-        ## @brief PPG input data of actual subject --> ABP
-        ##
-        dev0_abp = np.load(path_main+"dev0_abp/"+list_id[i], allow_pickle=True)
-        ## @brief First derivation of input data of actual subject. --> ABP
-        ##
-        dev1_abp = np.load(path_main+"dev1_abp/"+list_id[i], allow_pickle=True)
-        ## @brief Second derivation of input data of actual subject. --> ABP
-        ##
-        dev2_abp = np.load(path_main+"dev2_abp/"+list_id[i], allow_pickle=True)
-        ## @brief Target data of actual subject.
-        ##
-        target = np.load(path_main+"ground_truth/"+list_id[i])
-        
-        nr_segments = len(dev0)
-        print(f'nr_segments: {nr_segments}')
-        for j in range(nr_segments):
-            dev0_segment = dev0[j]
-            np.save(target_path+'dev0/'+str(total_nr)+db, dev0_segment)
-            dev1_segment = dev1[j]
-            np.save(target_path+'dev1/'+str(total_nr)+db, dev1_segment)
-            dev2_segment = dev2[j]
-            np.save(target_path+'dev2/'+str(total_nr)+db, dev2_segment)
-            dev0_abp_segment = dev0_abp[j]
-            np.save(target_path+'dev0_abp/'+str(total_nr)+db, dev0_abp_segment)
-            dev1_abp_segment = dev1_abp[j]
-            np.save(target_path+'dev1_abp/'+str(total_nr)+db, dev1_abp_segment)
-            dev2_abp_segment = dev2_abp[j]
-            np.save(target_path+'dev2_abp/'+str(total_nr)+db, dev2_abp_segment)
-            temp0_segment = temp0[j]
-            np.save(target_path+'temp0/'+str(total_nr)+db, temp0_segment)
-            temp1_segment = temp1[j]
-            np.save(target_path+'temp1/'+str(total_nr)+db, temp1_segment)
-            temp2_segment = temp2[j]
-            np.save(target_path+'temp2/'+str(total_nr)+db, temp2_segment)
-            if nr_segments == 1:
-                target_segment = target.reshape((1,2))
-            else:
-                target_segment = target[j]
-                target_segment = target_segment.reshape((1,2))
-            np.save(target_path+'ground_truth/'+str(total_nr)+db, target_segment)
-            
-            total_nr += 1
-            
-
-#process_data(path_main, files, target_path, db='v')
-
-
-#signals = np.load(path_main+"dev0/"+files[36])
-#z = np.load(path_main+"ground_truth/"+files[36])
-#z_example = z[0]
-#signal2 = signals[0]
-#z_reshaped = z_example.reshape((1,2))
-#Examples = np.load(target_path+'/dev0/18898v.npy')
-#target_segment = target[0]
-#target_segment = target.reshape((1,2))
-
-
-
+#Define Function for processing of data
 def process_data(data_path, list_id, target_path, db):
     total_nr = 0
     nr_signals = 10
@@ -156,8 +77,59 @@ def process_data(data_path, list_id, target_path, db):
             
             total_nr += 1
             
-            
+#%% Process Data        
 #process_data(path_main, files, target_path, db='v')    
 
+#%% Make quantitative Data from quant_id
+quant_id = np.load('ids_fold_pressure/quant_id.npy')
+for i in range(0,len(quant_id)):
+    print(f'Segment:{i}/{len(quant_id)}')
+    Segment = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/'+quant_id[i])
+    np.save('D:/Quantitative Data/'+quant_id[i], Segment) 
+    
 
-            
+#%% Process the derivatives new
+main_path = "C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/"
+target_path = 'C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data_new/'
+all_segments = os.listdir(main_path)
+db = 'v'
+
+def process_derivatives(data_path, target_path, files, db):
+    for i in range(0,len(files)):
+        print(i)
+        Segment = np.load(data_path+str(i)+db+'.npy')
+        all_signals = Segment.copy()
+        ABP_Signal = all_signals[3]
+        first_deriv = np.diff(ABP_Signal)
+        second_deriv = np.diff(first_deriv)
+        first_deriv_resampled = resample(first_deriv, num=1000)
+        second_deriv_resampled = resample(second_deriv, num=1000)
+        
+        Segment[4] = first_deriv_resampled
+        Segment[5] = second_deriv_resampled
+        
+        #np.save(target_path+str(i)+db+'.npy', Segment)
+        np.save(target_path+str(i)+db+'.npy', Segment)
+
+
+
+
+#process_derivatives(main_path, target_path, all_segments, db='v')
+#TestSegment1 = np.load(main_path+'0v.npy')
+#TestSegment2 = np.load(target_path+'0v.npy')
+
+#%% Compare Data
+Data_old = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/836594v.npy')
+Data_new = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/836594v.npy')
+
+#%% Load quant Data
+Quant_data_old = np.load('D:/Master-Studienarbeit/Quantitative Data Old/2292v.npy')
+Quant_data_new = np.load('D:/Master-Studienarbeit/Quantitative Data New/2292v.npy')
+Quant_data_test = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data/2292v.npy')
+#%% Make quantitative Data from quant_id - NEW DATA --> derivatives
+quant_id = np.load('ids_fold_pressure/quant_id.npy')
+for i in range(0,len(quant_id)):
+    print(f'Segment:{i}/{len(quant_id)}')
+    Segment = np.load('C:/Biomedizinische Informationstechnik/3. Semester/Master-Studienarbeit/Data_new/'+quant_id[i])
+    np.save('H:/Quantitative Data New/'+quant_id[i], Segment) 
+    

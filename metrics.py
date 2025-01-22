@@ -12,7 +12,7 @@ def rank_attributions(IG, pattern, window_length):
     IG_matrix = np.squeeze(IG)
     shape = np.shape(IG_matrix)
     n_input_signals = shape[0]
-    #Calculate sums ove the window_length
+    #Calculate sums over the window_length
     distances = np.arange(0,shape[1],window_length)
     summed_attributions_mat = np.zeros((n_input_signals,len(distances)))
     for i in range(0,n_input_signals):
@@ -127,10 +127,41 @@ def calculate_AOPC(x, IG, k, pattern, window_length, replacement_strategy, model
         all_diffs.append(diff)
         
     #AOPC = summe        #NEUE Berechnung
-    AOPC = 1/k * summe   #ALTE Berechnung
+    AOPC = 1/(k+1) * summe   #ALTE Berechnung
     
     return AOPC, all_diffs
 
+
+def calculate_AOPC_sum(x, IG, k, pattern, window_length, replacement_strategy, model):
+    #Rank attributions
+    IG_sum_atts, IG_ranks = rank_attributions(IG, pattern, window_length)
+    #Replace k features depending on the hyperparameters
+    x_replaced = replace_k_features(x, IG_ranks, k, window_length, replacement_strategy)
+    #Define nr_signals via IG Shape
+    IG_shape = np.shape(IG)
+    n_signals = IG_shape[0]
+    #Calculate AOPC with formula
+    f_x = model.predict(x, verbose=0)
+    summe = 0
+    all_diffs = []
+    for i in range(0,k):
+        #Make tf Tensor from numpy array
+        x_k = [tf.cast(np.expand_dims(x_replaced[i][j],axis=0), tf.float32) for j in range(0,n_signals)]
+        f_x_k = model.predict(x_k, verbose=0)
+        diff = f_x - f_x_k
+        summe = summe + diff
+        
+        #all_f_x_k.append(f_x_k)
+        all_diffs.append(diff)
+    
+    return summe
+
+def calculate_AOPC_from_all_sums(k, all_sums):
+    mean_sum = np.mean(all_sums)
+    
+    AOPC = (1/(k+1)) * mean_sum
+    
+    return AOPC
 
 
 
@@ -184,6 +215,7 @@ def replace_feature(x, x_ground_truth, ranks, k, window_length, replacement_stra
 def calculate_APT(x, IG, alpha, pattern, window_length, replacement_strategy, model, mode):
     IG_sum_atts, IG_ranks = rank_attributions(IG, pattern, window_length)
     matrix_shape = np.shape(IG_sum_atts)
+    k_max = ((matrix_shape[0]*1000)/window_length)-1
     x_temp = x.copy()
     x_temp = np.squeeze(np.array(x_temp))
     x_replaced = x_temp.copy()
@@ -209,24 +241,30 @@ def calculate_APT(x, IG, alpha, pattern, window_length, replacement_strategy, mo
                 condition = True
             else:
                 k = k+1
+                if k == k_max:
+                    condition = True
     elif mode == 'DBP':
         pred = model.predict(x, verbose=0)
         DBP_true = pred[0][1]
         #Calculate specific thresholds
         DBP_Up_lim = DBP_true + (alpha*DBP_true)
         DBP_Lo_lim = DBP_true - (alpha*DBP_true)
+        print(f'DBP_true:{DBP_true}, Up_Lim:{DBP_Up_lim}')
         while condition == False:
+            x_replaced = replace_feature(x_replaced, x_temp, IG_ranks, k, window_length, replacement_strategy)
             #Make tf tensor from numpy array
             x_replaced_tensor = [tf.cast(np.expand_dims(x_replaced[j],axis=0), tf.float32) for j in range(0,matrix_shape[0])]
-            x_replaced = replace_feature(x_replaced, x_temp, IG_ranks, k, window_length, replacement_strategy)
             pred_replaced = model.predict(x_replaced_tensor, verbose=0)
-            DBP_pred = pred_replaced[0][0]
+            DBP_pred = pred_replaced[0][1]
+            print(f'k:{k}, DBP_pred:{DBP_pred}')
             if DBP_pred > DBP_Up_lim:
                 condition = True
             elif DBP_pred < DBP_Lo_lim:
                 condition = True
             else:
                 k = k+1
+                if k == k_max:
+                    condition = True
     elif mode == 'ABP':
         pass
     #because k starts at zero
